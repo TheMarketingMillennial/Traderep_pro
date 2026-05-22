@@ -112,6 +112,10 @@ class Company {
   final int teamSize;
   final bool googleConnected;
   final String? googleBusinessId;
+  // Each client's own Google Business review URL.
+  // Stored in Firestore — never on the server or in app code.
+  // Example: 'https://g.page/r/ABC123XYZ/review'
+  final String? googleReviewLink;
   final DateTime createdAt;
 
   const Company({
@@ -125,6 +129,7 @@ class Company {
     required this.teamSize,
     this.googleConnected = false,
     this.googleBusinessId,
+    this.googleReviewLink,
     required this.createdAt,
   });
 

@@ -164,9 +164,12 @@ class SmsTemplates {
     description: 'Sends customer a link to leave a Google review',
     type: SmsType.reviewRequest,
     buildBody: ({required customerName, required jobType, required companyName, reviewLink}) =>
-      'Hi $customerName! Your $jobType with $companyName is complete. '
-      'We\'d love your feedback — could you spare 2 minutes to leave us a Google review? '
-      '${reviewLink ?? 'https://g.page/r/review'} Thank you! 🌟',
+      (reviewLink != null && reviewLink.isNotEmpty)
+        ? 'Hi $customerName! Your $jobType with $companyName is complete. '
+          'We\'d love your feedback — could you spare 2 minutes to leave us a Google review? '
+          '$reviewLink Thank you! 🌟'
+        : 'Hi $customerName! Your $jobType with $companyName is complete. '
+          'Thank you so much for choosing us! 🌟',
   );
 
   // ── Status Updates ──────────────────────────────────────────────────────────

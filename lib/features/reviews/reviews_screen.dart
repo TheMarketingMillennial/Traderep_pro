@@ -206,6 +206,7 @@ class _PendingReviewTile extends StatelessWidget {
             customerPhone: job.phone,
             jobType: job.jobType,
             companyName: state.company?.name ?? 'our team',
+            reviewLink: state.company?.googleReviewLink,
             templates: SmsTemplates.reviewTemplates,
             title: 'Review Request',
           ),

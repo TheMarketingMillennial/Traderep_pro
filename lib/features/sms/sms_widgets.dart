@@ -21,6 +21,7 @@ class SendSmsSheet extends StatefulWidget {
   final String customerPhone;
   final String jobType;
   final String companyName;
+  final String? reviewLink;       // company-specific Google review URL
   final List<SmsTemplate> templates;
   final String title;
 
@@ -31,6 +32,7 @@ class SendSmsSheet extends StatefulWidget {
     required this.customerPhone,
     required this.jobType,
     required this.companyName,
+    this.reviewLink,
     required this.templates,
     required this.title,
   });
@@ -62,6 +64,7 @@ class _SendSmsSheetState extends State<SendSmsSheet> {
     customerName: widget.customerName,
     jobType: widget.jobType,
     companyName: widget.companyName,
+    reviewLink: widget.reviewLink,
   );
 
   void _validatePhone(String value) {
@@ -86,6 +89,7 @@ class _SendSmsSheetState extends State<SendSmsSheet> {
         toPhone: _phoneCtrl.text,
         jobType: widget.jobType,
         companyName: widget.companyName,
+        reviewLink: widget.reviewLink,
       );
     } else {
       result = await state.sendStatusSms(
@@ -633,6 +637,7 @@ Future<SmsResult?> showSendSmsSheet(
   required String customerPhone,
   required String jobType,
   required String companyName,
+  String? reviewLink,             // company-specific Google review URL
   required List<SmsTemplate> templates,
   required String title,
 }) {
@@ -646,6 +651,7 @@ Future<SmsResult?> showSendSmsSheet(
       customerPhone: customerPhone,
       jobType: jobType,
       companyName: companyName,
+      reviewLink: reviewLink,
       templates: templates,
       title: title,
     ),

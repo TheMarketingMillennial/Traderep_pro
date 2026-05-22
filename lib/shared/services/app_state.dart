@@ -144,6 +144,7 @@ class AppState extends ChangeNotifier {
     required String toPhone,
     required String jobType,
     required String companyName,
+    String? reviewLink,           // each company's own Google review URL
   }) async {
     _smsSending = true;
     notifyListeners();
@@ -152,6 +153,7 @@ class AppState extends ChangeNotifier {
       customerName: customerName,
       jobType: jobType,
       companyName: companyName,
+      reviewLink: reviewLink,
     );
 
     final result = await SmsService.instance.send(

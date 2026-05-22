@@ -460,6 +460,8 @@ class JobDetailScreen extends StatelessWidget {
     if (job.status != JobStatus.completed) return const SizedBox.shrink();
 
     final companyName = state.company?.name ?? 'our team';
+    // Pull the review link from this company's Firestore document
+    final reviewLink = state.company?.googleReviewLink;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -508,6 +510,7 @@ class JobDetailScreen extends StatelessWidget {
                 customerPhone: job.phone,
                 jobType: job.jobType,
                 companyName: companyName,
+                reviewLink: reviewLink,
                 templates: SmsTemplates.reviewTemplates,
                 title: 'Review Request',
               ),

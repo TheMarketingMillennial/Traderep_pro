@@ -314,6 +314,7 @@ class FirestoreService {
       website: d['website'] as String?,
       logoUrl: d['logo_url'] as String?,
       googleConnected: (d['google_connected'] as bool?) ?? false,
+      googleReviewLink: d['google_review_link'] as String?,
       teamSize: teamSizeInt,
       createdAt: (d['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
