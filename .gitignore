@@ -1,0 +1,71 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# ─── Secrets & credentials — NEVER commit these ──────────────────────────────
+
+# Firebase: contains API keys and app IDs
+# Regenerate from google-services.json using dart-define at build time
+lib/core/firebase/firebase_options.dart
+
+# Android Firebase config — contains API key
+android/app/google-services.json
+
+# iOS Firebase config — contains API key
+ios/Runner/GoogleService-Info.plist
+
+# Android signing credentials
+android/key.properties
+android/release-key.jks
+android/*.jks
+android/*.keystore
+
+# Local environment files
+.env
+.env.local
+.env.*.local
+
+# Build-time config scripts (may contain injected secrets)
+scripts/build_with_secrets.sh

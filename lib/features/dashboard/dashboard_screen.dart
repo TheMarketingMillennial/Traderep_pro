@@ -1,0 +1,464 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../core/theme/app_theme.dart';
+import '../../shared/services/app_state.dart';
+import '../../shared/widgets/tr_widgets.dart';
+import '../../shared/models/models.dart';
+import '../pricing/trial_widgets.dart';
+
+class DashboardScreen extends StatelessWidget {
+  const DashboardScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<AppState>();
+    final user = state.currentUser;
+    final company = state.company;
+    final analytics = state.analytics;
+
+    return Scaffold(
+      backgroundColor: TRColors.navyDeep,
+      body: SafeArea(
+        child: CustomScrollView(
+          slivers: [
+            SliverToBoxAdapter(child: _buildHeader(context, user, company, state)),
+            SliverToBoxAdapter(child: TrialBanner()),
+            SliverToBoxAdapter(child: _buildGoogleBanner(context, state)),
+            SliverToBoxAdapter(child: _buildStats(analytics)),
+            SliverToBoxAdapter(child: _buildPendingContent(context, state)),
+            SliverToBoxAdapter(child: _buildRecentJobs(context, state)),
+            SliverToBoxAdapter(child: _buildTeamActivity(context, state)),
+            const SliverToBoxAdapter(child: SizedBox(height: 100)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader(BuildContext context, TRUser? user, Company? company, AppState state) {
+    final hour = DateTime.now().hour;
+    final greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('$greeting,', style: const TextStyle(
+                  color: TRColors.grayLight, fontSize: 14,
+                )),
+                Text(user?.name.split(' ').first ?? 'there', style: const TextStyle(
+                  color: TRColors.white, fontSize: 22, fontWeight: FontWeight.w800,
+                )),
+                Row(children: [
+                  Container(
+                    width: 6, height: 6,
+                    decoration: const BoxDecoration(color: TRColors.success, shape: BoxShape.circle),
+                  ),
+                  const SizedBox(width: 5),
+                  Text(company?.name ?? '', style: const TextStyle(
+                    color: TRColors.grayLight, fontSize: 12,
+                  )),
+                ]),
+              ],
+            ),
+          ),
+          Row(
+            children: [
+              // Plan badge in header
+              const PlanBadge(),
+              const SizedBox(width: 8),
+              // Pending badge
+              Stack(
+                children: [
+                  IconButton(
+                    onPressed: () {},
+                    icon: const Icon(Icons.notifications_outlined, color: TRColors.white, size: 24),
+                  ),
+                  if (state.pendingPosts.isNotEmpty)
+                    Positioned(
+                      top: 8, right: 8,
+                      child: Container(
+                        width: 16, height: 16,
+                        decoration: const BoxDecoration(color: TRColors.gold, shape: BoxShape.circle),
+                        child: Center(
+                          child: Text('${state.pendingPosts.length}', style: const TextStyle(
+                            color: TRColors.navyDeep, fontSize: 9, fontWeight: FontWeight.w800,
+                          )),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(width: 4),
+              GestureDetector(
+                onTap: () {},
+                child: Container(
+                  width: 40, height: 40,
+                  decoration: BoxDecoration(
+                    color: TRColors.gold.withValues(alpha: 0.2),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: TRColors.gold.withValues(alpha: 0.4)),
+                  ),
+                  child: Center(child: Text(
+                    user?.name.substring(0, 1) ?? 'U',
+                    style: const TextStyle(color: TRColors.gold, fontSize: 16, fontWeight: FontWeight.w800),
+                  )),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGoogleBanner(BuildContext context, AppState state) {
+    if (state.googleConnected) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: TRColors.goldDim,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: TRColors.gold.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.business_rounded, color: TRColors.gold, size: 20),
+          const SizedBox(width: 10),
+          const Expanded(child: Text(
+            'Connect Google Business Profile to start posting',
+            style: TextStyle(color: TRColors.gold, fontSize: 13, fontWeight: FontWeight.w600),
+          )),
+          TextButton(
+            onPressed: () => state.connectGoogle(),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              backgroundColor: TRColors.gold,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Text('Connect', style: TextStyle(color: TRColors.navyDeep, fontSize: 12, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStats(AnalyticsSummary analytics) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SectionHeader(title: 'This Month'),
+          const SizedBox(height: 12),
+          GridView.count(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisCount: 2,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+            childAspectRatio: 1.3,
+            children: [
+              TRStatCard(
+                label: 'Jobs Completed',
+                value: '${analytics.projectsCompleted}',
+                icon: Icons.check_circle_rounded,
+                accentColor: TRColors.success,
+                trend: '+12%',
+              ),
+              TRStatCard(
+                label: 'Reviews Earned',
+                value: '${analytics.reviewsGenerated}',
+                icon: Icons.star_rounded,
+                accentColor: TRColors.gold,
+                trend: '+8%',
+              ),
+              TRStatCard(
+                label: 'Photos Uploaded',
+                value: '${analytics.photosUploaded}',
+                icon: Icons.photo_library_rounded,
+                accentColor: TRColors.info,
+              ),
+              TRStatCard(
+                label: 'Google Posts',
+                value: '${analytics.googlePosts}',
+                icon: Icons.business_rounded,
+                accentColor: TRColors.statusLead,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPendingContent(BuildContext context, AppState state) {
+    final pending = state.pendingPosts;
+    if (pending.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const SectionHeader(title: 'Content Pending Review'),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: TRColors.warning.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text('${pending.length} waiting', style: const TextStyle(
+                  color: TRColors.warning, fontSize: 11, fontWeight: FontWeight.w600,
+                )),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ...pending.map((post) => _ContentPreviewCard(post: post)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecentJobs(BuildContext context, AppState state) {
+    final jobs = state.jobs.take(3).toList();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SectionHeader(
+            title: 'Active Jobs',
+            action: 'View All',
+            onAction: () {},
+          ),
+          const SizedBox(height: 12),
+          ...jobs.map((job) => JobCard(job: job)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTeamActivity(BuildContext context, AppState state) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SectionHeader(
+            title: 'Team Activity',
+            action: 'Manage',
+            onAction: () {},
+          ),
+          const SizedBox(height: 12),
+          ...state.team.take(4).map((member) => _TeamMemberTile(user: member)),
+        ],
+      ),
+    );
+  }
+}
+
+class _ContentPreviewCard extends StatelessWidget {
+  final ContentPost post;
+  const _ContentPreviewCard({required this.post});
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.read<AppState>();
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: TRColors.cardDark,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: TRColors.warning.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.auto_awesome_rounded, color: TRColors.gold, size: 16),
+              const SizedBox(width: 6),
+              const Expanded(child: Text('AI-Generated Content Ready', style: TextStyle(
+                color: TRColors.gold, fontSize: 13, fontWeight: FontWeight.w600,
+              ))),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: TRColors.warning.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Text('PENDING', style: TextStyle(
+                  color: TRColors.warning, fontSize: 10, fontWeight: FontWeight.w800,
+                  letterSpacing: 0.5,
+                )),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          // Before/After preview
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: SizedBox(
+              height: 90,
+              child: Row(
+                children: [
+                  Expanded(child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Image.network(post.beforePhotoUrl, fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(color: TRColors.cardMid,
+                          child: const Icon(Icons.photo_rounded, color: TRColors.grayMid)),
+                      ),
+                      Positioned(bottom: 4, left: 4,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.black54,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: const Text('BEFORE', style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800)),
+                        ),
+                      ),
+                    ],
+                  )),
+                  const SizedBox(width: 2),
+                  Expanded(child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Image.network(post.afterPhotoUrl, fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(color: TRColors.cardMid,
+                          child: const Icon(Icons.photo_rounded, color: TRColors.grayMid)),
+                      ),
+                      Positioned(bottom: 4, left: 4,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: TRColors.gold.withValues(alpha: 0.85),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: const Text('AFTER', style: TextStyle(color: TRColors.navyDeep, fontSize: 9, fontWeight: FontWeight.w800)),
+                        ),
+                      ),
+                    ],
+                  )),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            post.suggestedCaption,
+            style: const TextStyle(color: TRColors.grayLight, fontSize: 12),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(child: GestureDetector(
+                onTap: () {
+                  state.updatePostStatus(post.id, ContentStatus.rejected);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Post rejected'), backgroundColor: TRColors.error),
+                  );
+                },
+                child: Container(
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: TRColors.error.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: TRColors.error.withValues(alpha: 0.3)),
+                  ),
+                  child: const Center(child: Text('Reject', style: TextStyle(
+                    color: TRColors.error, fontSize: 13, fontWeight: FontWeight.w600,
+                  ))),
+                ),
+              )),
+              const SizedBox(width: 8),
+              Expanded(child: GestureDetector(
+                onTap: () {
+                  state.updatePostStatus(post.id, ContentStatus.approved);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Post approved for publishing!'), backgroundColor: TRColors.success),
+                  );
+                },
+                child: Container(
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: TRColors.success.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: TRColors.success.withValues(alpha: 0.4)),
+                  ),
+                  child: const Center(child: Text('Approve', style: TextStyle(
+                    color: TRColors.success, fontSize: 13, fontWeight: FontWeight.w600,
+                  ))),
+                ),
+              )),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TeamMemberTile extends StatelessWidget {
+  final TRUser user;
+  const _TeamMemberTile({required this.user});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: TRColors.cardDark,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: TRColors.divider),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 38, height: 38,
+            decoration: BoxDecoration(
+              color: TRColors.navyLight,
+              shape: BoxShape.circle,
+              border: Border.all(color: TRColors.divider),
+            ),
+            child: Center(child: Text(
+              user.name.substring(0, 1),
+              style: const TextStyle(color: TRColors.gold, fontSize: 15, fontWeight: FontWeight.w700),
+            )),
+          ),
+          const SizedBox(width: 12),
+          Expanded(child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(user.name, style: const TextStyle(
+                color: TRColors.white, fontSize: 14, fontWeight: FontWeight.w600,
+              )),
+              RoleBadge(role: user.role),
+            ],
+          )),
+          Container(
+            width: 8, height: 8,
+            decoration: const BoxDecoration(color: TRColors.success, shape: BoxShape.circle),
+          ),
+        ],
+      ),
+    );
+  }
+}
