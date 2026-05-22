@@ -116,6 +116,8 @@ class AppState extends ChangeNotifier {
           status: status,
           scheduledFor: p.scheduledFor,
           createdAt: p.createdAt,
+          sourceSubmissionId: p.sourceSubmissionId,
+          companyId: p.companyId,
         );
       }
       return p;
@@ -124,6 +126,121 @@ class AppState extends ChangeNotifier {
     _fs.updatePostStatus(postId, status).catchError((e) {
       if (kDebugMode) debugPrint('updatePostStatus Firestore error: $e');
     });
+  }
+
+  /// Bridges photo-submission pipeline → content-post pipeline.
+  /// Picks best before/after photo from [submission], generates a draft
+  /// caption from company context, writes to Firestore, and returns the
+  /// new [ContentPost] so the caller can open CreatePostSheet.
+  Future<ContentPost?> createPostFromSubmission(PhotoSubmission submission) async {
+    try {
+      final company = _company;
+      // Pick before photo: first with PhotoType.before, else first photo
+      final photos = submission.photos;
+      final beforePhoto = photos.firstWhere(
+        (p) => p.type == PhotoType.before,
+        orElse: () => photos.first,
+      );
+      // Pick after photo: first with PhotoType.after, else last photo
+      final afterPhoto = photos.firstWhere(
+        (p) => p.type == PhotoType.after,
+        orElse: () => photos.last,
+      );
+
+      // Find the job to enrich caption
+      final job = _jobs.firstWhere(
+        (j) => j.id == submission.jobId,
+        orElse: () => Job(
+          id: submission.jobId,
+          companyId: '',
+          customerName: '',
+          address: '',
+          phone: '',
+          email: '',
+          jobType: submission.jobName,
+          templateId: '',
+          status: JobStatus.inProgress,
+          crewLeadId: '',
+          crewMemberIds: const [],
+          photos: const [],
+          reviewSent: false,
+          createdAt: DateTime.now(),
+        ),
+      );
+
+      // Build draft caption from company + job context
+      final tradeName = company?.tradeCategory ?? 'Trade';
+      final area = company?.serviceArea ?? '';
+      final bizName = company?.name ?? '';
+      final jobType = job.jobType.isNotEmpty ? job.jobType : submission.jobName;
+
+      final areaStr = area.isNotEmpty ? ' in $area' : '';
+      final bizPrefix = bizName.isNotEmpty ? 'Trusted by $bizName — ' : '';
+      final areaServe = area.isNotEmpty ? ' serving $area' : '';
+      final draftCaption =
+          '$jobType complete$areaStr!\n\n'
+          'Our crew delivered a clean, professional result for another '
+          'happy customer. Every job gets our full attention from start '
+          'to finish.\n\n'
+          '${bizPrefix}Trusted $tradeName Experts$areaServe.\n\n'
+          'Call or message us for a free estimate!';
+
+      final hashtags = [
+        '#$tradeName'.replaceAll(' ', ''),
+        '#BeforeAndAfter',
+        '#${tradeName}Contractor'.replaceAll(' ', ''),
+        '#HomeImprovement',
+        '#QualityWork',
+        '#ContractorLife',
+      ];
+
+      final companyId = _fs.companyId;
+      final newPost = ContentPost(
+        id: '', // Firestore will assign
+        jobId: submission.jobId,
+        beforePhotoUrl: beforePhoto.networkUrl ?? '',
+        afterPhotoUrl: afterPhoto.networkUrl ?? '',
+        suggestedCaption: draftCaption,
+        suggestedHashtags: hashtags,
+        projectSummary: submission.crewNote ?? '',
+        status: ContentStatus.pending,
+        createdAt: DateTime.now(),
+        sourceSubmissionId: submission.id,
+        companyId: companyId,
+      );
+
+      // Write to Firestore and get real ID
+      final docId = await _fs.addPost(newPost);
+      final savedPost = ContentPost(
+        id: docId,
+        jobId: newPost.jobId,
+        beforePhotoUrl: newPost.beforePhotoUrl,
+        afterPhotoUrl: newPost.afterPhotoUrl,
+        suggestedCaption: newPost.suggestedCaption,
+        suggestedHashtags: newPost.suggestedHashtags,
+        projectSummary: newPost.projectSummary,
+        status: newPost.status,
+        createdAt: newPost.createdAt,
+        sourceSubmissionId: newPost.sourceSubmissionId,
+        companyId: newPost.companyId,
+      );
+
+      // Optimistic local insert
+      _posts = [savedPost, ..._posts];
+      notifyListeners();
+
+      return savedPost;
+    } catch (e) {
+      if (kDebugMode) debugPrint('createPostFromSubmission error: $e');
+      return null;
+    }
+  }
+
+  /// Replaces an existing post in the local list (used after CreatePostSheet
+  /// edits the caption / hashtags / photo URLs post-creation).
+  void replacePost(ContentPost updated) {
+    _posts = _posts.map((p) => p.id == updated.id ? updated : p).toList();
+    notifyListeners();
   }
 
   // ─── Reviews ─────────────────────────────────────────────────────────────────

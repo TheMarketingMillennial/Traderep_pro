@@ -6,6 +6,7 @@ import '../../shared/widgets/tr_widgets.dart';
 import '../../shared/models/models.dart';
 import '../pricing/trial_widgets.dart';
 import '../pricing/pricing_models.dart';
+import 'google_post_sheets.dart';
 
 class ContentScreen extends StatefulWidget {
   const ContentScreen({super.key});
@@ -407,12 +408,7 @@ class _ContentCardState extends State<_ContentCard> {
                     label: 'Publish to Google Business Profile',
                     icon: Icons.business_rounded,
                     compact: true,
-                    onTap: () {
-                      state.updatePostStatus(widget.post.id, ContentStatus.published);
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                        content: Text('Published to Google Business Profile!'), backgroundColor: TRColors.success,
-                      ));
-                    },
+                    onTap: () => showPublishSheet(context, post: widget.post),
                   ),
                   const SizedBox(height: 8),
                   GoldButton(

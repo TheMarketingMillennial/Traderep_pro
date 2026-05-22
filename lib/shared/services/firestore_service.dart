@@ -150,6 +150,15 @@ class FirestoreService {
     await _db.collection('content_posts').doc(postId).update(updates);
   }
 
+  Future<String> addPost(ContentPost post) async {
+    final data = post.toFirestore();
+    // Always stamp company_id from the authenticated service context
+    data['company_id'] = _companyId;
+    data['created_at'] = FieldValue.serverTimestamp();
+    final ref = await _db.collection('content_posts').add(data);
+    return ref.id;
+  }
+
   // ══════════════════════════════════════════════════════════════════════════
   // REVIEW REQUESTS
   // ══════════════════════════════════════════════════════════════════════════
@@ -491,6 +500,8 @@ class FirestoreService {
       scheduledFor: (d['scheduled_for'] as Timestamp?)?.toDate(),
       createdAt:
           (d['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      sourceSubmissionId: d['source_submission_id'] as String?,
+      companyId: (d['company_id'] as String?) ?? '',
     );
   }
 

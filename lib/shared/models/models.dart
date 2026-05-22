@@ -638,6 +638,10 @@ class ContentPost {
   final ContentStatus status;
   final DateTime? scheduledFor;
   final DateTime createdAt;
+  /// ID of the PhotoSubmission that originated this post (null for AI-generated).
+  final String? sourceSubmissionId;
+  /// Firestore company_id — required for multi-tenant postsStream query.
+  final String companyId;
 
   const ContentPost({
     required this.id,
@@ -650,7 +654,23 @@ class ContentPost {
     required this.status,
     this.scheduledFor,
     required this.createdAt,
+    this.sourceSubmissionId,
+    this.companyId = '',
   });
+
+  Map<String, dynamic> toFirestore() => {
+    'job_id': jobId,
+    'before_photo_url': beforePhotoUrl,
+    'after_photo_url': afterPhotoUrl,
+    'suggested_caption': suggestedCaption,
+    'suggested_hashtags': suggestedHashtags,
+    'project_summary': projectSummary,
+    'status': status.name,
+    'company_id': companyId,
+    if (sourceSubmissionId != null) 'source_submission_id': sourceSubmissionId,
+    if (scheduledFor != null) 'scheduled_for': scheduledFor!.toUtc().toIso8601String(),
+    'created_at': createdAt.toUtc().toIso8601String(),
+  };
 
   static List<ContentPost> get samplePosts => [
     ContentPost(
@@ -663,6 +683,8 @@ class ContentPost {
       projectSummary: 'Full roof replacement following hail storm damage. Removed existing 3-tab shingles, installed 50-year architectural shingles with ice & water shield, new ridge cap and flashing.',
       status: ContentStatus.pending,
       createdAt: DateTime.now().subtract(const Duration(hours: 2)),
+      sourceSubmissionId: null,
+      companyId: 'company_demo',
     ),
     ContentPost(
       id: 'post_002',
@@ -674,6 +696,8 @@ class ContentPost {
       projectSummary: 'Residential roof replacement, 2,400 sq ft. GAF Timberline HDZ shingles, upgraded ventilation, 6 new pipe boots.',
       status: ContentStatus.approved,
       createdAt: DateTime.now().subtract(const Duration(days: 1)),
+      sourceSubmissionId: null,
+      companyId: 'company_demo',
     ),
   ];
 }

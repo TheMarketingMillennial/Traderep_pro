@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../../core/theme/app_theme.dart';
 import '../../shared/models/models.dart';
 import '../../shared/services/app_state.dart';
+import '../content/google_post_sheets.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // APPROVAL SCREEN
@@ -488,6 +489,10 @@ class _ReviewNoteSheetState extends State<_ReviewNoteSheet> {
           backgroundColor: TRColors.cardDark,
         ),
       );
+      // After approval, offer to create a Google post draft from these photos
+      if (widget.approve && mounted) {
+        showCreatePostSheet(context, widget.submission);
+      }
     }
   }
 
