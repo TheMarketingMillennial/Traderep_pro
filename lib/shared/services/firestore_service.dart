@@ -2,7 +2,9 @@
 // Live Firestore data layer. All reads are real-time streams.
 // Write operations update Firestore and notify listeners via AppState.
 
+import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import '../models/models.dart';
 import '../../features/pricing/pricing_models.dart';
@@ -289,6 +291,107 @@ class FirestoreService {
       if (kDebugMode) debugPrint('FirestoreService getSubscription error: $e');
       return ActiveSubscription.demo;
     }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // PHOTO SUBMISSIONS
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /// Real-time stream of all photo submissions for this company,
+  /// sorted newest-first. Approval queue watches this stream.
+  Stream<List<PhotoSubmission>> photoSubmissionsStream() {
+    return _db
+        .collection('photo_submissions')
+        .where('company_id', isEqualTo: _companyId)
+        .snapshots()
+        .map((snap) {
+      final list = snap.docs
+          .map((d) => PhotoSubmission.fromFirestore(d.data(), d.id))
+          .toList();
+      list.sort((a, b) => b.submittedAt.compareTo(a.submittedAt));
+      return list;
+    }).handleError((e) {
+      if (kDebugMode) debugPrint('FirestoreService photoSubmissionsStream error: $e');
+      return <PhotoSubmission>[];
+    });
+  }
+
+  /// Crew member submits photos for a job.
+  /// Uploads each local file to Firebase Storage, then writes the
+  /// PhotoSubmission document to Firestore.
+  Future<PhotoSubmission> submitPhotos({
+    required String jobId,
+    required String jobName,
+    required String submittedById,
+    required String submittedByName,
+    required List<SubmittedPhoto> photos,
+    String? crewNote,
+  }) async {
+    final submissionId = 'sub_${DateTime.now().millisecondsSinceEpoch}';
+
+    // Upload each photo to Firebase Storage and collect network URLs
+    final uploadedPhotos = <SubmittedPhoto>[];
+    for (final photo in photos) {
+      if (photo.localPath != null && !kIsWeb) {
+        try {
+          final file = File(photo.localPath!);
+          final ref = FirebaseStorage.instance
+              .ref('photo_submissions/$_companyId/$jobId/$submissionId/${photo.id}.jpg');
+          final task = await ref.putFile(file);
+          final url = await task.ref.getDownloadURL();
+          uploadedPhotos.add(SubmittedPhoto(
+            id: photo.id,
+            localPath: photo.localPath,
+            networkUrl: url,
+            type: photo.type,
+            label: photo.label,
+          ));
+        } catch (e) {
+          if (kDebugMode) debugPrint('Photo upload error for ${photo.id}: $e');
+          // Keep the local path version if upload fails
+          uploadedPhotos.add(photo);
+        }
+      } else {
+        uploadedPhotos.add(photo);
+      }
+    }
+
+    final submission = PhotoSubmission(
+      id: submissionId,
+      jobId: jobId,
+      jobName: jobName,
+      companyId: _companyId,
+      submittedById: submittedById,
+      submittedByName: submittedByName,
+      photos: uploadedPhotos,
+      crewNote: crewNote,
+      status: PhotoSubmissionStatus.pending,
+      submittedAt: DateTime.now(),
+    );
+
+    await _db
+        .collection('photo_submissions')
+        .doc(submissionId)
+        .set(submission.toFirestore());
+
+    return submission;
+  }
+
+  /// Approver updates a submission status (approve or reject) with an optional note.
+  Future<void> updateSubmissionStatus({
+    required String submissionId,
+    required PhotoSubmissionStatus status,
+    required String reviewedById,
+    required String reviewedByName,
+    String? reviewerNote,
+  }) async {
+    await _db.collection('photo_submissions').doc(submissionId).update({
+      'status': status.name,
+      'reviewed_by_id': reviewedById,
+      'reviewed_by_name': reviewedByName,
+      'reviewer_note': reviewerNote,
+      'reviewed_at': FieldValue.serverTimestamp(),
+    });
   }
 
   // ══════════════════════════════════════════════════════════════════════════

@@ -98,6 +98,26 @@ enum PhotoType { before, progress, after }
 // ─── Content Status ───────────────────────────────────────────────────────────
 enum ContentStatus { pending, approved, rejected, scheduled, published }
 
+// ─── Photo Submission Status ──────────────────────────────────────────────────
+enum PhotoSubmissionStatus { pending, approved, rejected }
+
+extension PhotoSubmissionStatusX on PhotoSubmissionStatus {
+  String get displayName {
+    switch (this) {
+      case PhotoSubmissionStatus.pending:  return 'Pending Review';
+      case PhotoSubmissionStatus.approved: return 'Approved';
+      case PhotoSubmissionStatus.rejected: return 'Rejected';
+    }
+  }
+  String get shortName {
+    switch (this) {
+      case PhotoSubmissionStatus.pending:  return 'Pending';
+      case PhotoSubmissionStatus.approved: return 'Approved';
+      case PhotoSubmissionStatus.rejected: return 'Rejected';
+    }
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // COMPANY MODEL
 // ─────────────────────────────────────────────────────────────────────────────
@@ -325,6 +345,196 @@ class JobPhoto {
     required this.uploadedAt,
     required this.uploadedBy,
   });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PHOTO SUBMISSION MODEL
+// Crew member submits photos → owner/manager reviews and approves/rejects.
+// Each submission can contain multiple photos (before, progress, after).
+// ─────────────────────────────────────────────────────────────────────────────
+class PhotoSubmission {
+  final String id;
+  final String jobId;
+  final String jobName;       // denormalised for display without extra query
+  final String companyId;
+  final String submittedById;
+  final String submittedByName;
+  final List<SubmittedPhoto> photos;
+  final String? crewNote;
+  final PhotoSubmissionStatus status;
+  final String? reviewerNote;  // rejection reason or approval comment
+  final String? reviewedById;
+  final String? reviewedByName;
+  final DateTime submittedAt;
+  final DateTime? reviewedAt;
+
+  const PhotoSubmission({
+    required this.id,
+    required this.jobId,
+    required this.jobName,
+    required this.companyId,
+    required this.submittedById,
+    required this.submittedByName,
+    required this.photos,
+    this.crewNote,
+    this.status = PhotoSubmissionStatus.pending,
+    this.reviewerNote,
+    this.reviewedById,
+    this.reviewedByName,
+    required this.submittedAt,
+    this.reviewedAt,
+  });
+
+  PhotoSubmission copyWith({
+    PhotoSubmissionStatus? status,
+    String? reviewerNote,
+    String? reviewedById,
+    String? reviewedByName,
+    DateTime? reviewedAt,
+  }) {
+    return PhotoSubmission(
+      id: id, jobId: jobId, jobName: jobName, companyId: companyId,
+      submittedById: submittedById, submittedByName: submittedByName,
+      photos: photos, crewNote: crewNote,
+      status: status ?? this.status,
+      reviewerNote: reviewerNote ?? this.reviewerNote,
+      reviewedById: reviewedById ?? this.reviewedById,
+      reviewedByName: reviewedByName ?? this.reviewedByName,
+      submittedAt: submittedAt,
+      reviewedAt: reviewedAt ?? this.reviewedAt,
+    );
+  }
+
+  Map<String, dynamic> toFirestore() => {
+    'job_id':              jobId,
+    'job_name':            jobName,
+    'company_id':          companyId,
+    'submitted_by_id':     submittedById,
+    'submitted_by_name':   submittedByName,
+    'photos':              photos.map((p) => p.toMap()).toList(),
+    'crew_note':           crewNote,
+    'status':              status.name,
+    'reviewer_note':       reviewerNote,
+    'reviewed_by_id':      reviewedById,
+    'reviewed_by_name':    reviewedByName,
+    'submitted_at':        submittedAt.toIso8601String(),
+    'reviewed_at':         reviewedAt?.toIso8601String(),
+  };
+
+  static PhotoSubmission fromFirestore(Map<String, dynamic> d, String id) {
+    final rawPhotos = (d['photos'] as List<dynamic>?) ?? [];
+    return PhotoSubmission(
+      id:               id,
+      jobId:            (d['job_id']            as String?) ?? '',
+      jobName:          (d['job_name']           as String?) ?? 'Job',
+      companyId:        (d['company_id']         as String?) ?? '',
+      submittedById:    (d['submitted_by_id']    as String?) ?? '',
+      submittedByName:  (d['submitted_by_name']  as String?) ?? 'Crew Member',
+      photos:           rawPhotos.map((p) => SubmittedPhoto.fromMap(p as Map<String, dynamic>)).toList(),
+      crewNote:         d['crew_note']           as String?,
+      status:           _parseStatus(d['status'] as String?),
+      reviewerNote:     d['reviewer_note']       as String?,
+      reviewedById:     d['reviewed_by_id']      as String?,
+      reviewedByName:   d['reviewed_by_name']    as String?,
+      submittedAt:      _parseDate(d['submitted_at']),
+      reviewedAt:       d['reviewed_at'] != null ? _parseDate(d['reviewed_at']) : null,
+    );
+  }
+
+  static PhotoSubmissionStatus _parseStatus(String? s) {
+    switch (s) {
+      case 'approved': return PhotoSubmissionStatus.approved;
+      case 'rejected': return PhotoSubmissionStatus.rejected;
+      default:         return PhotoSubmissionStatus.pending;
+    }
+  }
+
+  static DateTime _parseDate(dynamic d) {
+    if (d == null) return DateTime.now();
+    try { return DateTime.parse(d as String); } catch (_) { return DateTime.now(); }
+  }
+
+  // ── Sample data for UI preview ─────────────────────────────────────────────
+  static List<PhotoSubmission> get samples => [
+    PhotoSubmission(
+      id: 'sub_001',
+      jobId: 'job_001',
+      jobName: 'Robert & Linda Hayes — Full Roof Replacement',
+      companyId: 'co_001',
+      submittedById: 'usr_003',
+      submittedByName: 'Jake Rivera',
+      photos: [
+        SubmittedPhoto(id: 'p1', localPath: null, networkUrl: 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400', type: PhotoType.before, label: 'Front elevation before'),
+        SubmittedPhoto(id: 'p2', localPath: null, networkUrl: 'https://images.unsplash.com/photo-1570129477492-45c003edd2be?w=400', type: PhotoType.after, label: 'Front elevation after'),
+      ],
+      crewNote: 'All shingles replaced. Gutters cleaned.',
+      status: PhotoSubmissionStatus.pending,
+      submittedAt: DateTime.now().subtract(const Duration(hours: 2)),
+    ),
+    PhotoSubmission(
+      id: 'sub_002',
+      jobId: 'job_003',
+      jobName: 'David Kim — Storm Damage Repair',
+      companyId: 'co_001',
+      submittedById: 'usr_003',
+      submittedByName: 'Jake Rivera',
+      photos: [
+        SubmittedPhoto(id: 'p3', localPath: null, networkUrl: 'https://images.unsplash.com/photo-1509358271058-acd22cc93898?w=400', type: PhotoType.before, label: 'Damage area'),
+        SubmittedPhoto(id: 'p4', localPath: null, networkUrl: 'https://images.unsplash.com/photo-1416879595882-3373a0480b5b?w=400', type: PhotoType.after, label: 'Repaired area'),
+      ],
+      crewNote: 'Storm damage on north face fully repaired.',
+      status: PhotoSubmissionStatus.approved,
+      reviewedByName: 'Mike Torres',
+      reviewerNote: 'Great shots! Added to portfolio.',
+      submittedAt: DateTime.now().subtract(const Duration(days: 1)),
+      reviewedAt: DateTime.now().subtract(const Duration(hours: 10)),
+    ),
+  ];
+}
+
+// ─── Submitted Photo ──────────────────────────────────────────────────────────
+// A single photo within a submission. localPath = file on device before upload,
+// networkUrl = Firebase Storage URL after upload.
+class SubmittedPhoto {
+  final String id;
+  final String? localPath;   // set immediately on device; null after cloud upload
+  final String? networkUrl;  // set after upload to Firebase Storage
+  final PhotoType type;
+  final String? label;       // optional short description from crew
+
+  const SubmittedPhoto({
+    required this.id,
+    this.localPath,
+    this.networkUrl,
+    required this.type,
+    this.label,
+  });
+
+  String? get displayUrl => networkUrl ?? localPath;
+  bool get hasImage => displayUrl != null;
+
+  Map<String, dynamic> toMap() => {
+    'id':          id,
+    'network_url': networkUrl,
+    'type':        type.name,
+    'label':       label,
+  };
+
+  static SubmittedPhoto fromMap(Map<String, dynamic> m) => SubmittedPhoto(
+    id:         (m['id']          as String?) ?? '',
+    networkUrl: m['network_url']  as String?,
+    type:       _parseType(m['type'] as String?),
+    label:      m['label']        as String?,
+  );
+
+  static PhotoType _parseType(String? s) {
+    switch (s) {
+      case 'before':   return PhotoType.before;
+      case 'progress': return PhotoType.progress;
+      case 'after':    return PhotoType.after;
+      default:         return PhotoType.before;
+    }
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

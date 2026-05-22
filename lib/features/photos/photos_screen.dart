@@ -1,9 +1,18 @@
+// photos_screen.dart — TradeRep Pro
+// Role-based photo hub:
+//   All roles  → "Submit" tab (capture guide + submit sheet)
+//   All roles  → "Gallery" tab (submitted photos by job)
+//   Approvers  → "Review Queue" tab with pending count badge
+//   (admin / officeManager / salesRep can approve)
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_theme.dart';
 import '../../shared/services/app_state.dart';
 import '../../shared/widgets/tr_widgets.dart';
 import '../../shared/models/models.dart';
+import 'photo_submission_widgets.dart';
+import 'photo_approval_screen.dart';
 
 class PhotosScreen extends StatefulWidget {
   const PhotosScreen({super.key});
@@ -12,10 +21,9 @@ class PhotosScreen extends StatefulWidget {
   State<PhotosScreen> createState() => _PhotosScreenState();
 }
 
-class _PhotosScreenState extends State<PhotosScreen> with SingleTickerProviderStateMixin {
+class _PhotosScreenState extends State<PhotosScreen>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  // ignore: unused_field
-  bool _showingGuidance = false;
 
   @override
   void initState() {
@@ -32,20 +40,26 @@ class _PhotosScreenState extends State<PhotosScreen> with SingleTickerProviderSt
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    final canApprove = state.canApprovePhotos;
+    final pendingCount = state.pendingSubmissions.length;
+
     return Scaffold(
       backgroundColor: TRColors.navyDeep,
       body: SafeArea(
         child: Column(
           children: [
-            _buildHeader(context),
-            _buildTabBar(),
+            _buildHeader(context, state),
+            _buildTabBar(canApprove, pendingCount),
             Expanded(
               child: TabBarView(
                 controller: _tabController,
                 children: [
-                  _buildCaptureTab(context, state),
+                  _buildSubmitTab(context, state),
                   _buildGalleryTab(context, state),
-                  _buildAnalysisTab(context, state),
+                  // Tab 3 differs by role
+                  canApprove
+                      ? const PhotoApprovalScreen()
+                      : _buildMySubmissionsTab(context, state),
                 ],
               ),
             ),
@@ -55,7 +69,9 @@ class _PhotosScreenState extends State<PhotosScreen> with SingleTickerProviderSt
     );
   }
 
-  Widget _buildHeader(BuildContext context) {
+  // ─── Header ──────────────────────────────────────────────────────────────────
+
+  Widget _buildHeader(BuildContext context, AppState state) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
       child: Row(
@@ -63,8 +79,9 @@ class _PhotosScreenState extends State<PhotosScreen> with SingleTickerProviderSt
           const Expanded(child: Text('Photos', style: TextStyle(
             color: TRColors.white, fontSize: 24, fontWeight: FontWeight.w800,
           ))),
+          // Submit button — available to ALL roles
           GestureDetector(
-            onTap: () => _openCamera(context),
+            onTap: () => showSubmitPhotosSheet(context),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               decoration: BoxDecoration(
@@ -74,9 +91,9 @@ class _PhotosScreenState extends State<PhotosScreen> with SingleTickerProviderSt
               child: const Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.camera_alt_rounded, color: TRColors.navyDeep, size: 18),
+                  Icon(Icons.upload_rounded, color: TRColors.navyDeep, size: 18),
                   SizedBox(width: 6),
-                  Text('Capture', style: TextStyle(
+                  Text('Submit', style: TextStyle(
                     color: TRColors.navyDeep, fontSize: 13, fontWeight: FontWeight.w700,
                   )),
                 ],
@@ -88,33 +105,60 @@ class _PhotosScreenState extends State<PhotosScreen> with SingleTickerProviderSt
     );
   }
 
-  Widget _buildTabBar() {
-    final tabs = ['Capture Guide', 'Gallery', 'AI Analysis'];
+  // ─── Tab Bar ─────────────────────────────────────────────────────────────────
+
+  Widget _buildTabBar(bool canApprove, int pendingCount) {
+    final labels = ['Submit', 'Gallery', canApprove ? 'Review Queue' : 'My Submissions'];
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
       child: Row(
-        children: tabs.asMap().entries.map((entry) {
-          final selected = _tabController.index == entry.key;
+        children: labels.asMap().entries.map((entry) {
+          final i = entry.key;
+          final label = entry.value;
+          final selected = _tabController.index == i;
+          // Show badge on Review Queue tab when there are pending items
+          final showBadge = i == 2 && canApprove && pendingCount > 0;
+
           return Expanded(child: GestureDetector(
             onTap: () {
-              _tabController.animateTo(entry.key);
+              _tabController.animateTo(i);
               setState(() {});
             },
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 200),
-              margin: const EdgeInsets.only(right: 6),
+              margin: EdgeInsets.only(right: i < 2 ? 6.0 : 0.0),
               padding: const EdgeInsets.symmetric(vertical: 9),
               decoration: BoxDecoration(
                 color: selected ? TRColors.gold : TRColors.cardDark,
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(color: selected ? TRColors.gold : TRColors.divider),
               ),
-              child: Text(entry.value,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: selected ? TRColors.navyDeep : TRColors.grayLight,
-                  fontSize: 11, fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                ),
+              child: Stack(
+                clipBehavior: Clip.none,
+                alignment: Alignment.center,
+                children: [
+                  Text(label,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: selected ? TRColors.navyDeep : TRColors.grayLight,
+                      fontSize: 11, fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    ),
+                  ),
+                  if (showBadge)
+                    Positioned(
+                      top: -8, right: 4,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: TRColors.warning,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text('$pendingCount', style: const TextStyle(
+                          color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800,
+                        )),
+                      ),
+                    ),
+                ],
               ),
             ),
           ));
@@ -123,25 +167,70 @@ class _PhotosScreenState extends State<PhotosScreen> with SingleTickerProviderSt
     );
   }
 
-  Widget _buildCaptureTab(BuildContext context, AppState state) {
+  // ─── TAB 1: Submit (Capture Guide) ───────────────────────────────────────────
+
+  Widget _buildSubmitTab(BuildContext context, AppState state) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 8),
-          // Select Job
-          const Text('Select Active Job', style: TextStyle(
+
+          // Quick submit card
+          GestureDetector(
+            onTap: () => showSubmitPhotosSheet(context),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [TRColors.gold, TRColors.gold.withValues(alpha: 0.7)],
+                ),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.upload_rounded, color: TRColors.navyDeep, size: 28),
+                  SizedBox(width: 14),
+                  Expanded(child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Submit Photos for Review', style: TextStyle(
+                        color: TRColors.navyDeep, fontSize: 16, fontWeight: FontWeight.w800,
+                      )),
+                      SizedBox(height: 3),
+                      Text('Pick a job, select type, add photos + note', style: TextStyle(
+                        color: TRColors.navyDeep, fontSize: 12,
+                      )),
+                    ],
+                  )),
+                  Icon(Icons.arrow_forward_ios_rounded, color: TRColors.navyDeep, size: 16),
+                ],
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
+          // Active jobs — tap to open submit sheet pre-loaded
+          const Text('Active Jobs', style: TextStyle(
             color: TRColors.grayLight, fontSize: 13, fontWeight: FontWeight.w600,
           )),
           const SizedBox(height: 8),
-          ...state.activeJobs.take(3).map((job) => _JobSelectTile(
-            job: job,
-            onTap: () => _openCameraForJob(context, job),
-          )),
+          if (state.activeJobs.isEmpty)
+            const _EmptyJobsHint()
+          else
+            ...state.activeJobs.take(5).map((job) => _JobQuickTile(
+              job: job,
+              onTap: () => showSubmitPhotosSheet(context, preselectedJob: job),
+            )),
+
           const SizedBox(height: 20),
 
-          // AI Shot Guide
+          // AI framing guide
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -156,54 +245,51 @@ class _PhotosScreenState extends State<PhotosScreen> with SingleTickerProviderSt
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Row(
-                  children: [
-                    Icon(Icons.auto_awesome_rounded, color: TRColors.gold, size: 20),
-                    SizedBox(width: 8),
-                    Text('AI Photo Framing Guide', style: TextStyle(
-                      color: TRColors.gold, fontSize: 15, fontWeight: FontWeight.w700,
-                    )),
-                  ],
-                ),
-                const SizedBox(height: 12),
+                const Row(children: [
+                  Icon(Icons.auto_awesome_rounded, color: TRColors.gold, size: 20),
+                  SizedBox(width: 8),
+                  Text('AI Photo Framing Guide', style: TextStyle(
+                    color: TRColors.gold, fontSize: 15, fontWeight: FontWeight.w700,
+                  )),
+                ]),
+                const SizedBox(height: 10),
                 const Text(
-                  'Our AI framing assistant gives real-time guidance to ensure every photo is marketing-ready.',
+                  'Follow these framing tips to ensure your photos score high for marketing use.',
                   style: TextStyle(color: TRColors.grayLight, fontSize: 13, height: 1.5),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 14),
                 ..._framingTips.map((tip) => Padding(
                   padding: const EdgeInsets.only(bottom: 10),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(7),
-                        decoration: BoxDecoration(
-                          color: (tip['color'] as Color).withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Icon(tip['icon'] as IconData, color: tip['color'] as Color, size: 16),
+                  child: Row(children: [
+                    Container(
+                      padding: const EdgeInsets.all(7),
+                      decoration: BoxDecoration(
+                        color: (tip['color'] as Color).withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(8),
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(tip['title'] as String, style: const TextStyle(
-                            color: TRColors.white, fontSize: 13, fontWeight: FontWeight.w600,
-                          )),
-                          Text(tip['desc'] as String, style: const TextStyle(
-                            color: TRColors.grayMid, fontSize: 12,
-                          )),
-                        ],
-                      )),
-                    ],
-                  ),
+                      child: Icon(tip['icon'] as IconData, color: tip['color'] as Color, size: 16),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(tip['title'] as String, style: const TextStyle(
+                          color: TRColors.white, fontSize: 13, fontWeight: FontWeight.w600,
+                        )),
+                        Text(tip['desc'] as String, style: const TextStyle(
+                          color: TRColors.grayMid, fontSize: 12,
+                        )),
+                      ],
+                    )),
+                  ]),
                 )),
               ],
             ),
           ),
 
           const SizedBox(height: 20),
-          // Templates
+
+          // Photo templates
           const Text('Photo Templates', style: TextStyle(
             color: TRColors.white, fontSize: 17, fontWeight: FontWeight.w700,
           )),
@@ -214,126 +300,206 @@ class _PhotosScreenState extends State<PhotosScreen> with SingleTickerProviderSt
     );
   }
 
-  Widget _buildGalleryTab(BuildContext context, AppState state) {
-    return const Center(
-      child: TREmptyState(
-        icon: Icons.photo_library_outlined,
-        title: 'Your Photo Gallery',
-        subtitle: 'Photos captured on jobs will appear here, organized by project and date.',
-      ),
-    );
-  }
+  // ─── TAB 2: Gallery ──────────────────────────────────────────────────────────
 
-  Widget _buildAnalysisTab(BuildContext context, AppState state) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: TRColors.cardDark,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: TRColors.divider),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Row(
-                  children: [
-                    Icon(Icons.psychology_rounded, color: TRColors.gold, size: 22),
-                    SizedBox(width: 8),
-                    Text('AI Photo Analysis Engine', style: TextStyle(
-                      color: TRColors.white, fontSize: 15, fontWeight: FontWeight.w700,
-                    )),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'TradeRep automatically scores your project photos and selects the best before/after pairs for marketing.',
-                  style: TextStyle(color: TRColors.grayLight, fontSize: 13, height: 1.5),
-                ),
-                const SizedBox(height: 16),
-                const Text('Sample Score — Last Analyzed Photo', style: TextStyle(
-                  color: TRColors.grayLight, fontSize: 12, fontWeight: FontWeight.w600,
-                )),
-                const SizedBox(height: 12),
-                PhotoScoreBar(label: 'Lighting Quality', score: 0.88),
-                const SizedBox(height: 8),
-                PhotoScoreBar(label: 'Framing & Composition', score: 0.75),
-                const SizedBox(height: 8),
-                PhotoScoreBar(label: 'Image Sharpness', score: 0.92),
-                const SizedBox(height: 8),
-                PhotoScoreBar(label: 'Scene Cleanliness', score: 0.84),
-                const SizedBox(height: 8),
-                PhotoScoreBar(label: 'Visual Transformation', score: 0.96, color: TRColors.success),
-                const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: TRColors.success.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: TRColors.success.withValues(alpha: 0.3)),
-                  ),
-                  child: const Row(
-                    children: [
-                      Icon(Icons.auto_awesome_rounded, color: TRColors.success, size: 18),
-                      SizedBox(width: 8),
-                      Expanded(child: Text(
-                        'Excellent transformation score! This pair will make a great Google post.',
-                        style: TextStyle(color: TRColors.success, fontSize: 12, fontWeight: FontWeight.w600),
-                      )),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+  Widget _buildGalleryTab(BuildContext context, AppState state) {
+    final approved = state.photoSubmissions
+        .where((s) => s.status == PhotoSubmissionStatus.approved)
+        .toList();
+
+    if (approved.isEmpty) {
+      return const Center(
+        child: TREmptyState(
+          icon: Icons.photo_library_outlined,
+          title: 'Photo Gallery',
+          subtitle: 'Approved photos will appear here, organized by job.',
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
+      itemCount: approved.length,
+      itemBuilder: (_, i) {
+        final sub = approved[i];
+        return Container(
+          margin: const EdgeInsets.only(bottom: 14),
+          decoration: BoxDecoration(
+            color: TRColors.cardDark,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: TRColors.divider),
           ),
-          const SizedBox(height: 16),
-          // Output formats
-          const Text('Generated Outputs', style: TextStyle(
-            color: TRColors.white, fontSize: 17, fontWeight: FontWeight.w700,
-          )),
-          const SizedBox(height: 12),
-          ..._outputFormats.map((fmt) => Container(
-            margin: const EdgeInsets.only(bottom: 10),
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: TRColors.cardDark,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: TRColors.divider),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: (fmt['color'] as Color).withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(fmt['icon'] as IconData, color: fmt['color'] as Color, size: 20),
-                ),
-                const SizedBox(width: 12),
-                Expanded(child: Column(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(fmt['title'] as String, style: const TextStyle(
-                      color: TRColors.white, fontSize: 14, fontWeight: FontWeight.w700,
+                    Row(children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: TRColors.success.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Text('APPROVED', style: TextStyle(
+                          color: TRColors.success, fontSize: 9, fontWeight: FontWeight.w800,
+                        )),
+                      ),
+                      const Spacer(),
+                      Text('${sub.photos.length} photo${sub.photos.length == 1 ? '' : 's'}',
+                        style: const TextStyle(color: TRColors.grayMid, fontSize: 12)),
+                    ]),
+                    const SizedBox(height: 8),
+                    Text(sub.jobName, style: const TextStyle(
+                      color: TRColors.white, fontSize: 15, fontWeight: FontWeight.w700,
                     )),
-                    Text(fmt['desc'] as String, style: const TextStyle(
+                    const SizedBox(height: 4),
+                    Text('by ${sub.submittedByName}', style: const TextStyle(
                       color: TRColors.grayMid, fontSize: 12,
                     )),
                   ],
-                )),
-                Icon(Icons.download_rounded, color: TRColors.gold, size: 20),
-              ],
-            ),
-          )),
-        ],
-      ),
+                ),
+              ),
+              // Photo strip
+              SizedBox(
+                height: 100,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+                  itemCount: sub.photos.length,
+                  itemBuilder: (_, j) {
+                    final photo = sub.photos[j];
+                    return Container(
+                      width: 88,
+                      margin: const EdgeInsets.only(right: 8),
+                      decoration: BoxDecoration(
+                        color: TRColors.navyMid,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: photo.displayUrl != null
+                            ? Image.network(photo.displayUrl!, fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => const Icon(Icons.photo_rounded, color: TRColors.grayMid))
+                            : const Icon(Icons.photo_rounded, color: TRColors.grayMid),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
+  }
+
+  // ─── TAB 3 (crew only): My Submissions ──────────────────────────────────────
+
+  Widget _buildMySubmissionsTab(BuildContext context, AppState state) {
+    final userId = state.currentUser?.id;
+    final mine = state.photoSubmissions
+        .where((s) => s.submittedById == userId)
+        .toList();
+
+    if (mine.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const TREmptyState(
+              icon: Icons.cloud_upload_outlined,
+              title: 'No Submissions Yet',
+              subtitle: 'Tap Submit to send photos to your manager for review.',
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton.icon(
+              onPressed: () => showSubmitPhotosSheet(context),
+              icon: const Icon(Icons.upload_rounded, size: 18),
+              label: const Text('Submit Photos'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: TRColors.gold,
+                foregroundColor: TRColors.navyDeep,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
+      itemCount: mine.length,
+      itemBuilder: (_, i) {
+        final sub = mine[i];
+        final statusColor = _statusColor(sub.status);
+        return Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: TRColors.cardDark,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: statusColor.withValues(alpha: 0.3)),
+          ),
+          child: Row(children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: statusColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(_statusIcon(sub.status), color: statusColor, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(sub.jobName, style: const TextStyle(
+                  color: TRColors.white, fontSize: 14, fontWeight: FontWeight.w600,
+                )),
+                const SizedBox(height: 3),
+                Row(children: [
+                  Text(sub.status.displayName, style: TextStyle(
+                    color: statusColor, fontSize: 12, fontWeight: FontWeight.w600,
+                  )),
+                  Text('  ·  ${sub.photos.length} photo${sub.photos.length == 1 ? '' : 's'}',
+                    style: const TextStyle(color: TRColors.grayMid, fontSize: 12)),
+                ]),
+                if (sub.reviewerNote != null) ...[
+                  const SizedBox(height: 4),
+                  Text(sub.reviewerNote!, style: const TextStyle(
+                    color: TRColors.grayMid, fontSize: 12, fontStyle: FontStyle.italic,
+                  ), maxLines: 2, overflow: TextOverflow.ellipsis),
+                ],
+              ],
+            )),
+          ]),
+        );
+      },
+    );
+  }
+
+  // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+  Color _statusColor(PhotoSubmissionStatus s) {
+    switch (s) {
+      case PhotoSubmissionStatus.pending:  return TRColors.warning;
+      case PhotoSubmissionStatus.approved: return TRColors.success;
+      case PhotoSubmissionStatus.rejected: return TRColors.error;
+    }
+  }
+
+  IconData _statusIcon(PhotoSubmissionStatus s) {
+    switch (s) {
+      case PhotoSubmissionStatus.pending:  return Icons.hourglass_top_rounded;
+      case PhotoSubmissionStatus.approved: return Icons.check_circle_rounded;
+      case PhotoSubmissionStatus.rejected: return Icons.cancel_rounded;
+    }
   }
 
   static final _framingTips = [
@@ -342,38 +508,16 @@ class _PhotosScreenState extends State<PhotosScreen> with SingleTickerProviderSt
     {'title': 'Detail Close-Up', 'desc': 'Move close to highlight craftsmanship', 'icon': Icons.center_focus_strong_rounded, 'color': TRColors.warning},
     {'title': 'Landscape Mode', 'desc': 'Rotate for vanities, counters, and panels', 'icon': Icons.screen_rotation_rounded, 'color': TRColors.success},
   ];
-
-  static final _outputFormats = [
-    {'title': 'Best Before/After Pair', 'desc': 'Optimally matched transformation photo', 'icon': Icons.compare_rounded, 'color': TRColors.gold},
-    {'title': 'Google-Ready Image', 'desc': '1200×900px, optimized for GBP posts', 'icon': Icons.business_rounded, 'color': TRColors.info},
-    {'title': 'Social Media Crop', 'desc': '1080×1080px square for Instagram/Facebook', 'icon': Icons.crop_square_rounded, 'color': TRColors.statusLead},
-    {'title': 'Portfolio Image', 'desc': '16:9 widescreen for website gallery', 'icon': Icons.web_rounded, 'color': TRColors.success},
-  ];
-
-  void _openCamera(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Camera with AI framing guide — available on mobile device'),
-        backgroundColor: TRColors.navyMid,
-      ),
-    );
-  }
-
-  void _openCameraForJob(BuildContext context, Job job) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: TRColors.cardDark,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => _CameraGuideSheet(job: job),
-    );
-  }
 }
 
-class _JobSelectTile extends StatelessWidget {
+// ─────────────────────────────────────────────────────────────────────────────
+// SMALL REUSABLE WIDGETS
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _JobQuickTile extends StatelessWidget {
   final Job job;
   final VoidCallback onTap;
-  const _JobSelectTile({required this.job, required this.onTap});
+  const _JobQuickTile({required this.job, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -387,24 +531,22 @@ class _JobSelectTile extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: TRColors.divider),
         ),
-        child: Row(
-          children: [
-            const Icon(Icons.work_rounded, color: TRColors.grayMid, size: 18),
-            const SizedBox(width: 10),
-            Expanded(child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(job.customerName, style: const TextStyle(
-                  color: TRColors.white, fontSize: 14, fontWeight: FontWeight.w600,
-                )),
-                Text(job.jobType, style: const TextStyle(color: TRColors.grayMid, fontSize: 12)),
-              ],
-            )),
-            StatusBadge(status: job.status, compact: true),
-            const SizedBox(width: 8),
-            const Icon(Icons.camera_alt_rounded, color: TRColors.gold, size: 18),
-          ],
-        ),
+        child: Row(children: [
+          const Icon(Icons.work_rounded, color: TRColors.grayMid, size: 18),
+          const SizedBox(width: 10),
+          Expanded(child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(job.customerName, style: const TextStyle(
+                color: TRColors.white, fontSize: 14, fontWeight: FontWeight.w600,
+              )),
+              Text('${job.jobType} · ${job.status.displayName}', style: const TextStyle(
+                color: TRColors.grayMid, fontSize: 12,
+              )),
+            ],
+          )),
+          const Icon(Icons.camera_alt_rounded, color: TRColors.gold, size: 18),
+        ]),
       ),
     );
   }
@@ -424,223 +566,83 @@ class _TemplateTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: TRColors.divider),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text(template.emoji, style: const TextStyle(fontSize: 20)),
-              const SizedBox(width: 8),
-              Text(template.name, style: const TextStyle(
-                color: TRColors.white, fontSize: 14, fontWeight: FontWeight.w700,
-              )),
-              const Spacer(),
-              Text('${template.shots.length} shots', style: const TextStyle(
-                color: TRColors.grayMid, fontSize: 12,
-              )),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 6, runSpacing: 4,
-            children: template.shots.map((shot) => Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: TRColors.cardMid,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: TRColors.divider),
-              ),
-              child: Text(shot.name, style: const TextStyle(color: TRColors.grayLight, fontSize: 11)),
-            )).toList(),
-          ),
-        ],
-      ),
+      child: Row(children: [
+        Text(template.emoji, style: const TextStyle(fontSize: 24)),
+        const SizedBox(width: 12),
+        Expanded(child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(template.name, style: const TextStyle(
+              color: TRColors.white, fontSize: 14, fontWeight: FontWeight.w700,
+            )),
+            Text('${template.shots.length} required shots', style: const TextStyle(
+              color: TRColors.grayMid, fontSize: 12,
+            )),
+          ],
+        )),
+        const Icon(Icons.chevron_right_rounded, color: TRColors.grayMid, size: 20),
+      ]),
     );
   }
 }
 
-class _CameraGuideSheet extends StatefulWidget {
-  final Job job;
-  const _CameraGuideSheet({required this.job});
-
-  @override
-  State<_CameraGuideSheet> createState() => _CameraGuideSheetState();
-}
-
-class _CameraGuideSheetState extends State<_CameraGuideSheet> {
-  int _currentShot = 0;
-  PhotoType _phase = PhotoType.before;
-
-  static const _instructions = [
-    'Stand in the doorway and capture the full scope of the project area',
-    'Move left slightly to show the complete work zone',
-    'Step back — capture wide angle to show the full roof/area',
-    'Center the feature element in frame, keep horizon level',
-    'Move in close to capture the quality of craftsmanship detail',
-  ];
+class _EmptyJobsHint extends StatelessWidget {
+  const _EmptyJobsHint();
 
   @override
   Widget build(BuildContext context) {
-    return DraggableScrollableSheet(
-      initialChildSize: 0.7,
-      maxChildSize: 0.9,
-      minChildSize: 0.5,
-      expand: false,
-      builder: (_, scrollController) => Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(child: Container(width: 40, height: 4,
-              decoration: BoxDecoration(color: TRColors.divider, borderRadius: BorderRadius.circular(2)))),
-            const SizedBox(height: 20),
-            Row(children: [
-              const Icon(Icons.auto_awesome_rounded, color: TRColors.gold, size: 20),
-              const SizedBox(width: 8),
-              Text('AI Framing Guide — ${widget.job.customerName}',
-                style: const TextStyle(color: TRColors.white, fontSize: 15, fontWeight: FontWeight.w700)),
-            ]),
-            const SizedBox(height: 20),
-            // Phase selector
-            Row(children: PhotoType.values.map((type) {
-              final selected = _phase == type;
-              final colors = {
-                PhotoType.before: TRColors.info,
-                PhotoType.progress: TRColors.warning,
-                PhotoType.after: TRColors.success,
-              };
-              return Expanded(child: GestureDetector(
-                onTap: () => setState(() => _phase = type),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  margin: const EdgeInsets.only(right: 6),
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                  decoration: BoxDecoration(
-                    color: selected ? colors[type]!.withValues(alpha: 0.2) : TRColors.cardMid,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: selected ? colors[type]! : TRColors.divider),
-                  ),
-                  child: Text(type.name.toUpperCase(),
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: selected ? colors[type]! : TRColors.grayMid,
-                      fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 0.5,
-                    )),
-                ),
-              ));
-            }).toList()),
-            const SizedBox(height: 20),
-            // Camera viewfinder simulation
-            Container(
-              height: 200,
-              decoration: BoxDecoration(
-                color: Colors.black,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: TRColors.gold.withValues(alpha: 0.4), width: 2),
-              ),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(14),
-                    child: Container(
-                      color: TRColors.navyDeep,
-                      child: const Center(child: Icon(Icons.camera_rounded, color: TRColors.grayMid, size: 60)),
-                    ),
-                  ),
-                  // Grid overlay
-                  CustomPaint(painter: _GridPainter()),
-                  // Instruction overlay
-                  Positioned(
-                    bottom: 0, left: 0, right: 0,
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.bottomCenter,
-                          end: Alignment.topCenter,
-                          colors: [Colors.black.withValues(alpha: 0.8), Colors.transparent],
-                        ),
-                        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(14)),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.my_location_rounded, color: TRColors.gold, size: 14),
-                          const SizedBox(width: 6),
-                          Expanded(child: Text(
-                            _instructions[_currentShot % _instructions.length],
-                            style: const TextStyle(color: Colors.white, fontSize: 11),
-                          )),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                GestureDetector(
-                  onTap: () {
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Photo captured!'), backgroundColor: TRColors.success),
-                    );
-                  },
-                  child: Container(
-                    width: 64, height: 64,
-                    decoration: BoxDecoration(
-                      color: TRColors.gold,
-                      shape: BoxShape.circle,
-                      boxShadow: [BoxShadow(color: TRColors.gold.withValues(alpha: 0.4), blurRadius: 12, spreadRadius: 2)],
-                    ),
-                    child: const Icon(Icons.camera_alt_rounded, color: TRColors.navyDeep, size: 28),
-                  ),
-                ),
-                Column(
-                  children: [
-                    Text('Shot ${_currentShot + 1} of 5', style: const TextStyle(color: TRColors.grayLight, fontSize: 13)),
-                    const Text('Tap camera to capture', style: TextStyle(color: TRColors.grayMid, fontSize: 11)),
-                  ],
-                ),
-                GestureDetector(
-                  onTap: () => setState(() => _currentShot = (_currentShot + 1) % 5),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: TRColors.cardMid,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: TRColors.divider),
-                    ),
-                    child: const Text('Next Shot →', style: TextStyle(
-                      color: TRColors.gold, fontSize: 13, fontWeight: FontWeight.w600,
-                    )),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: TRColors.cardDark,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: TRColors.divider),
       ),
+      child: const Row(children: [
+        Icon(Icons.info_outline_rounded, color: TRColors.grayMid, size: 16),
+        SizedBox(width: 8),
+        Expanded(child: Text('No active jobs. Mark a job as In Progress to link photos.',
+          style: TextStyle(color: TRColors.grayMid, fontSize: 13))),
+      ]),
     );
   }
 }
 
-class _GridPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.15)
-      ..strokeWidth = 0.5;
+// Re-export PhotoScoreBar used by the old AI Analysis tab
+// (kept for use elsewhere in the app)
+class PhotoScoreBar extends StatelessWidget {
+  final String label;
+  final double score;
+  final Color color;
+  const PhotoScoreBar({
+    super.key,
+    required this.label,
+    required this.score,
+    this.color = TRColors.gold,
+  });
 
-    canvas.drawLine(Offset(size.width / 3, 0), Offset(size.width / 3, size.height), paint);
-    canvas.drawLine(Offset(size.width * 2 / 3, 0), Offset(size.width * 2 / 3, size.height), paint);
-    canvas.drawLine(Offset(0, size.height / 3), Offset(size.width, size.height / 3), paint);
-    canvas.drawLine(Offset(0, size.height * 2 / 3), Offset(size.width, size.height * 2 / 3), paint);
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(children: [
+          Expanded(child: Text(label, style: const TextStyle(color: TRColors.grayLight, fontSize: 12))),
+          Text('${(score * 100).toInt()}%', style: TextStyle(
+            color: color, fontSize: 12, fontWeight: FontWeight.w700,
+          )),
+        ]),
+        const SizedBox(height: 4),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: LinearProgressIndicator(
+            value: score,
+            backgroundColor: TRColors.cardMid,
+            valueColor: AlwaysStoppedAnimation(color),
+            minHeight: 6,
+          ),
+        ),
+      ],
+    );
   }
-
-  @override
-  bool shouldRepaint(_) => false;
 }

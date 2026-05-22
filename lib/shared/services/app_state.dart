@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:image_picker/image_picker.dart';
 import '../models/models.dart';
 import '../models/sms_models.dart';
 import '../../features/pricing/pricing_models.dart';
@@ -17,6 +18,7 @@ class AppState extends ChangeNotifier {
   StreamSubscription<List<TRUser>>? _teamSub;
   StreamSubscription<Company?>? _companySub;
   StreamSubscription<List<ProjectTemplate>>? _templatesSub;
+  StreamSubscription<List<PhotoSubmission>>? _photoSubmissionsSub;
 
   // ─── Auth State ─────────────────────────────────────────────────────────────
   bool _isLoggedIn = false;
@@ -56,7 +58,6 @@ class AppState extends ChangeNotifier {
   void addJob(Job job) {
     _jobs = [job, ..._jobs];
     notifyListeners();
-    // Write to Firestore (fire and forget)
     _fs.addJob(job).catchError((e) {
       if (kDebugMode) debugPrint('addJob Firestore error: $e');
     });
@@ -90,7 +91,6 @@ class AppState extends ChangeNotifier {
       return j;
     }).toList();
     notifyListeners();
-    // Sync to Firestore
     _fs.updateJobStatus(jobId, newStatus).catchError((e) {
       if (kDebugMode) debugPrint('updateJobStatus Firestore error: $e');
     });
@@ -121,7 +121,6 @@ class AppState extends ChangeNotifier {
       return p;
     }).toList();
     notifyListeners();
-    // Sync to Firestore
     _fs.updatePostStatus(postId, status).catchError((e) {
       if (kDebugMode) debugPrint('updatePostStatus Firestore error: $e');
     });
@@ -167,7 +166,6 @@ class AppState extends ChangeNotifier {
 
     if (result.success && result.message != null) {
       _smsLog.insert(0, result.message!);
-      // Mark job as review sent
       _markReviewSent(jobId, toPhone);
     }
 
@@ -229,7 +227,6 @@ class AppState extends ChangeNotifier {
         createdAt: j.createdAt,
       );
     }).toList();
-    // Also add to reviews list
     final job = _jobs.firstWhere((j) => j.id == jobId, orElse: () => _jobs.first);
     final review = ReviewRequest(
       id: 'rv_${DateTime.now().millisecondsSinceEpoch}',
@@ -253,6 +250,116 @@ class AppState extends ChangeNotifier {
   // ─── Team ────────────────────────────────────────────────────────────────────
   List<TRUser> _team = TRUser.sampleTeam;
   List<TRUser> get team => _team;
+
+  // ─── Photo Submissions ───────────────────────────────────────────────────────
+  List<PhotoSubmission> _photoSubmissions = PhotoSubmission.samples;
+  List<PhotoSubmission> get photoSubmissions => _photoSubmissions;
+
+  /// Pending submissions waiting for approval.
+  List<PhotoSubmission> get pendingSubmissions =>
+      _photoSubmissions.where((s) => s.status == PhotoSubmissionStatus.pending).toList();
+
+  /// True if the current user can approve/reject submissions.
+  /// Roles: admin, officeManager, salesRep (marketing).
+  bool get canApprovePhotos {
+    final role = _currentUser?.role;
+    return role == UserRole.admin ||
+        role == UserRole.officeManager ||
+        role == UserRole.salesRep;
+  }
+
+  /// Any crew member submits photos for a job.
+  Future<void> submitPhotos({
+    required String jobId,
+    required String jobName,
+    required List<XFile> pickedFiles,
+    required PhotoType photoType,
+    String? crewNote,
+  }) async {
+    final user = _currentUser;
+    if (user == null) return;
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final photos = pickedFiles.asMap().entries.map((e) => SubmittedPhoto(
+      id: 'ph_${ts}_${e.key}',
+      localPath: e.value.path,
+      type: photoType,
+    )).toList();
+
+    try {
+      final submission = await _fs.submitPhotos(
+        jobId: jobId,
+        jobName: jobName,
+        submittedById: user.id,
+        submittedByName: user.name,
+        photos: photos,
+        crewNote: crewNote,
+      );
+      // Optimistic local insert
+      _photoSubmissions = [submission, ..._photoSubmissions];
+      notifyListeners();
+    } catch (e) {
+      if (kDebugMode) debugPrint('submitPhotos error: $e');
+    }
+  }
+
+  /// Approver approves a submission with optional feedback note.
+  Future<void> approveSubmission(String submissionId, {String? note}) async {
+    final user = _currentUser;
+    if (user == null || !canApprovePhotos) return;
+    await _applySubmissionStatus(
+      submissionId: submissionId,
+      status: PhotoSubmissionStatus.approved,
+      reviewedById: user.id,
+      reviewedByName: user.name,
+      note: note,
+    );
+  }
+
+  /// Approver rejects a submission with optional note explaining why.
+  Future<void> rejectSubmission(String submissionId, {String? note}) async {
+    final user = _currentUser;
+    if (user == null || !canApprovePhotos) return;
+    await _applySubmissionStatus(
+      submissionId: submissionId,
+      status: PhotoSubmissionStatus.rejected,
+      reviewedById: user.id,
+      reviewedByName: user.name,
+      note: note,
+    );
+  }
+
+  Future<void> _applySubmissionStatus({
+    required String submissionId,
+    required PhotoSubmissionStatus status,
+    required String reviewedById,
+    required String reviewedByName,
+    String? note,
+  }) async {
+    // Optimistic local update
+    _photoSubmissions = _photoSubmissions.map((s) {
+      if (s.id != submissionId) return s;
+      return s.copyWith(
+        status: status,
+        reviewedById: reviewedById,
+        reviewedByName: reviewedByName,
+        reviewerNote: note,
+        reviewedAt: DateTime.now(),
+      );
+    }).toList();
+    notifyListeners();
+
+    try {
+      await _fs.updateSubmissionStatus(
+        submissionId: submissionId,
+        status: status,
+        reviewedById: reviewedById,
+        reviewedByName: reviewedByName,
+        reviewerNote: note,
+      );
+    } catch (e) {
+      if (kDebugMode) debugPrint('updateSubmissionStatus error: $e');
+    }
+  }
 
   // ─── Google Status ───────────────────────────────────────────────────────────
   bool _googleConnected = false;
@@ -349,6 +456,7 @@ class AppState extends ChangeNotifier {
     _team = TRUser.sampleTeam;
     _templates = ProjectTemplate.defaultTemplates;
     _analytics = AnalyticsSummary.sample;
+    _photoSubmissions = PhotoSubmission.samples;
     _smsLog.clear();
     notifyListeners();
   }
@@ -392,7 +500,6 @@ class AppState extends ChangeNotifier {
       });
 
       _reviewsSub = _fs.reviewsStream().listen((_) {
-        // Reviews are read-only for now — sample data used in UI
         notifyListeners();
       }, onError: (e) {
         if (kDebugMode) debugPrint('Reviews stream error: $e');
@@ -422,11 +529,17 @@ class AppState extends ChangeNotifier {
         if (kDebugMode) debugPrint('Templates stream error: $e');
       });
 
+      _photoSubmissionsSub = _fs.photoSubmissionsStream().listen((subs) {
+        if (subs.isNotEmpty) _photoSubmissions = subs;
+        notifyListeners();
+      }, onError: (e) {
+        if (kDebugMode) debugPrint('PhotoSubmissions stream error: $e');
+      });
+
       _firestoreReady = true;
       notifyListeners();
     } catch (e) {
       if (kDebugMode) debugPrint('Firestore init error: $e — falling back to sample data');
-      // Gracefully fall back — app still works with sample data
       _firestoreReady = false;
       notifyListeners();
     }
@@ -439,6 +552,7 @@ class AppState extends ChangeNotifier {
     _teamSub?.cancel();
     _companySub?.cancel();
     _templatesSub?.cancel();
+    _photoSubmissionsSub?.cancel();
   }
 
   @override

@@ -5,6 +5,7 @@ import '../../shared/services/app_state.dart';
 import '../../shared/widgets/tr_widgets.dart';
 import '../../shared/models/models.dart';
 import '../pricing/trial_widgets.dart';
+import '../photos/photo_approval_screen.dart';
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
@@ -26,6 +27,7 @@ class DashboardScreen extends StatelessWidget {
             SliverToBoxAdapter(child: _buildGoogleBanner(context, state)),
             SliverToBoxAdapter(child: _buildStats(analytics)),
             SliverToBoxAdapter(child: _buildPendingContent(context, state)),
+            SliverToBoxAdapter(child: _buildPendingPhotos(context, state)),
             SliverToBoxAdapter(child: _buildRecentJobs(context, state)),
             SliverToBoxAdapter(child: _buildTeamActivity(context, state)),
             const SliverToBoxAdapter(child: SizedBox(height: 100)),
@@ -230,6 +232,47 @@ class DashboardScreen extends StatelessWidget {
     );
   }
 
+  Widget _buildPendingPhotos(BuildContext context, AppState state) {
+    if (!state.canApprovePhotos) return const SizedBox.shrink();
+    final pending = state.pendingSubmissions;
+    if (pending.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const SectionHeader(title: 'Photos Pending Approval'),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: TRColors.info.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text('${pending.length} waiting', style: const TextStyle(
+                  color: TRColors.info, fontSize: 11, fontWeight: FontWeight.w600,
+                )),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ...pending.take(2).map((sub) => _PhotoSubmissionPreviewCard(submission: sub)),
+          if (pending.length > 2)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                '+${pending.length - 2} more — open Photos tab to review',
+                style: const TextStyle(color: TRColors.grayMid, fontSize: 12),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildRecentJobs(BuildContext context, AppState state) {
     final jobs = state.jobs.take(3).toList();
     return Padding(
@@ -410,6 +453,63 @@ class _ContentPreviewCard extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _PhotoSubmissionPreviewCard extends StatelessWidget {
+  final PhotoSubmission submission;
+  const _PhotoSubmissionPreviewCard({required this.submission});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const PhotoApprovalScreen()),
+      ),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: TRColors.cardDark,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: TRColors.info.withValues(alpha: 0.3)),
+        ),
+        child: Row(children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: TRColors.info.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(Icons.photo_library_rounded, color: TRColors.info, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(submission.jobName, style: const TextStyle(
+                color: TRColors.white, fontSize: 14, fontWeight: FontWeight.w600,
+              )),
+              const SizedBox(height: 3),
+              Text(
+                '${submission.photos.length} photo${submission.photos.length == 1 ? '' : 's'} · by ${submission.submittedByName}',
+                style: const TextStyle(color: TRColors.grayMid, fontSize: 12),
+              ),
+            ],
+          )),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: TRColors.warning.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Text('REVIEW', style: TextStyle(
+              color: TRColors.warning, fontSize: 10, fontWeight: FontWeight.w800,
+            )),
+          ),
+        ]),
       ),
     );
   }

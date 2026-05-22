@@ -66,8 +66,12 @@ class _MainShellState extends State<MainShell> {
                 final item = entry.value;
                 final selected = _currentIndex == i;
 
-                // Badge for content pending
-                final showBadge = i == 3 && state.pendingPosts.isNotEmpty;
+                // Badge for content pending (index 3) or photos pending approval (index 2)
+                final showBadge = (i == 3 && state.pendingPosts.isNotEmpty) ||
+                    (i == 2 && state.canApprovePhotos && state.pendingSubmissions.isNotEmpty);
+                final badgeCount = i == 3
+                    ? state.pendingPosts.length
+                    : state.pendingSubmissions.length;
 
                 return GestureDetector(
                   onTap: () => setState(() => _currentIndex = i),
@@ -105,12 +109,12 @@ class _MainShellState extends State<MainShell> {
                             top: -3, right: -5,
                             child: Container(
                               width: 14, height: 14,
-                              decoration: const BoxDecoration(
-                                color: TRColors.gold,
+                              decoration: BoxDecoration(
+                                color: i == 2 ? TRColors.warning : TRColors.gold,
                                 shape: BoxShape.circle,
                               ),
                               child: Center(child: Text(
-                                '${state.pendingPosts.length}',
+                                '$badgeCount',
                                 style: const TextStyle(
                                   color: TRColors.navyDeep,
                                   fontSize: 8,
