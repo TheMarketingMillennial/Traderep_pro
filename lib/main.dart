@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'core/theme/app_theme.dart';
+import 'core/config/app_config.dart';
 import 'core/firebase/firebase_options.dart';
 import 'shared/services/app_state.dart';
 import 'features/onboarding/onboarding_screen.dart';
@@ -12,13 +13,19 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // ── Firebase Init ──────────────────────────────────────────────────────────
-  try {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
-  } catch (e) {
-    // Firebase init failure is non-fatal — app runs with local sample data
-    debugPrint('Firebase init error: $e');
+  // Only initialise when real credentials are present (injected via
+  // --dart-define at build time).  Without them the app runs on local
+  // sample data — safe for web previews and demos.
+  if (AppConfig.isFirebaseConfigured) {
+    try {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+    } catch (e) {
+      debugPrint('Firebase init error: $e');
+    }
+  } else {
+    debugPrint('Firebase not configured — running on sample data.');
   }
 
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
