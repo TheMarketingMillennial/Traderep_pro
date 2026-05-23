@@ -7,6 +7,7 @@ import '../models/sms_models.dart';
 import '../../features/pricing/pricing_models.dart';
 import 'firestore_service.dart';
 import 'sms_service.dart';
+import 'gbp_service.dart';
 
 class AppState extends ChangeNotifier {
   final FirestoreService _fs = FirestoreService();
@@ -478,7 +479,7 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  // ─── Google Status ───────────────────────────────────────────────────────────
+  // ─── Google / GBP Status ─────────────────────────────────────────────────────
   bool _googleConnected = false;
   bool get googleConnected => _googleConnected;
 
@@ -488,6 +489,80 @@ class AppState extends ChangeNotifier {
     _fs.updateGoogleConnected(true).catchError((e) {
       if (kDebugMode) debugPrint('connectGoogle Firestore error: $e');
     });
+  }
+
+  /// Persists the GBP location resource name for this company.
+  /// Pass null to clear (reverts to manual Phase 1 posting flow in PublishSheet).
+  Future<void> updateGbpLocationId(String? locationId) async {
+    // Optimistic update to Company object in-memory
+    if (_company != null) {
+      _company = Company(
+        id:                _company!.id,
+        name:              _company!.name,
+        logoUrl:           _company!.logoUrl,
+        tradeCategory:     _company!.tradeCategory,
+        serviceArea:       _company!.serviceArea,
+        phone:             _company!.phone,
+        website:           _company!.website,
+        teamSize:          _company!.teamSize,
+        googleConnected:   _company!.googleConnected,
+        googleBusinessId:  _company!.googleBusinessId,
+        googleReviewLink:  _company!.googleReviewLink,
+        gbpLocationId:     locationId,
+        createdAt:         _company!.createdAt,
+      );
+      notifyListeners();
+    }
+    await _fs.updateGbpLocationId(locationId);
+  }
+
+  /// Publishes a ContentPost to Google Business Profile via the Railway server.
+  ///
+  /// Requires [company.gbpLocationId] to be set. On success, marks the post
+  /// as [ContentStatus.published] in Firestore.
+  ///
+  /// Returns a [GbpResult] — caller decides how to surface success/failure UI.
+  Future<GbpResult> publishToGbp(ContentPost post) async {
+    final locationId = _company?.gbpLocationId;
+    if (locationId == null || locationId.isEmpty) {
+      return GbpResult.failure(
+        error: 'No GBP location configured. Set Location ID in Settings.',
+        errorCode: 'GBP_NOT_CONFIGURED',
+      );
+    }
+
+    // Build the full post text: caption + hashtags
+    final summary = [
+      post.suggestedCaption,
+      if (post.suggestedHashtags.isNotEmpty) post.suggestedHashtags.join(' '),
+    ].join('\n\n');
+
+    // Use after photo as the primary post image; fall back to before photo
+    final photoUrl = post.afterPhotoUrl.isNotEmpty
+        ? post.afterPhotoUrl
+        : post.beforePhotoUrl;
+
+    // Build CTA from company phone if available
+    final phone = _company?.phone ?? '';
+    final ctaType = phone.isNotEmpty ? 'CALL' : 'LEARN_MORE';
+    final ctaUrl  = phone.isNotEmpty
+        ? 'tel:${phone.replaceAll(RegExp(r'[^\d+]'), '')}'
+        : (_company?.website ?? '');
+
+    final result = await GbpService.instance.publishPost(
+      locationId:          locationId,
+      summary:             summary,
+      photoUrl:            photoUrl,
+      callToActionType:    ctaType,
+      callToActionUrl:     ctaUrl,
+    );
+
+    if (result.success) {
+      // Mark as published in Firestore + local state
+      updatePostStatus(post.id, ContentStatus.published);
+    }
+
+    return result;
   }
 
   // ─── Subscription ─────────────────────────────────────────────────────────

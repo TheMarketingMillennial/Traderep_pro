@@ -158,6 +158,19 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
+  void _showGbpLocationSheet(
+      BuildContext context, AppState state, Company company) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => ChangeNotifierProvider.value(
+        value: state,
+        child: _GbpLocationSheet(current: company.gbpLocationId),
+      ),
+    );
+  }
+
   Widget _buildCompanySection(BuildContext context, Company company, AppState state) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
@@ -182,6 +195,17 @@ class ProfileScreen extends StatelessWidget {
             onTap: () {
               if (!state.googleConnected) state.connectGoogle();
             },
+          ),
+          _SettingsTile(
+            icon: Icons.location_on_rounded,
+            title: 'GBP Location ID',
+            subtitle: (company.gbpLocationId != null && company.gbpLocationId!.isNotEmpty)
+                ? company.gbpLocationId!
+                : 'Not set — tap to enable one-tap publishing',
+            statusColor: (company.gbpLocationId != null && company.gbpLocationId!.isNotEmpty)
+                ? TRColors.success
+                : TRColors.warning,
+            onTap: () => _showGbpLocationSheet(context, state, company),
           ),
           _SettingsTile(
             icon: Icons.photo_library_rounded,
@@ -374,6 +398,208 @@ class ProfileScreen extends StatelessWidget {
             ],
           )),
         ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GBP LOCATION ID EDIT SHEET
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _GbpLocationSheet extends StatefulWidget {
+  final String? current;
+  const _GbpLocationSheet({this.current});
+
+  @override
+  State<_GbpLocationSheet> createState() => _GbpLocationSheetState();
+}
+
+class _GbpLocationSheetState extends State<_GbpLocationSheet> {
+  late TextEditingController _ctrl;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = TextEditingController(text: widget.current ?? '');
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final value = _ctrl.text.trim();
+    // Basic format check: must start with 'accounts/' if non-empty
+    if (value.isNotEmpty && !value.startsWith('accounts/')) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text(
+            'Format must be: accounts/123456789/locations/987654321'),
+        backgroundColor: TRColors.error,
+      ));
+      return;
+    }
+    setState(() => _saving = true);
+    await context.read<AppState>().updateGbpLocationId(
+          value.isEmpty ? null : value,
+        );
+    if (mounted) {
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Row(children: [
+          const Icon(Icons.check_circle_rounded,
+              color: TRColors.success, size: 18),
+          const SizedBox(width: 10),
+          Text(value.isEmpty
+              ? 'GBP Location ID cleared.'
+              : 'GBP Location ID saved!'),
+        ]),
+        backgroundColor: TRColors.cardDark,
+      ));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding:
+          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Container(
+        decoration: const BoxDecoration(
+          color: TRColors.navyMid,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          border:
+              Border(top: BorderSide(color: TRColors.goldDark, width: 1.5)),
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Drag handle
+            Center(
+              child: Container(
+                width: 40, height: 4,
+                decoration: BoxDecoration(
+                  color: TRColors.grayMid.withValues(alpha: 0.4),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            // Header
+            Row(children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF4285F4).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.location_on_rounded,
+                    color: Color(0xFF4285F4), size: 20),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('GBP Location ID',
+                        style: TextStyle(
+                            color: TRColors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700)),
+                    Text('Enables one-tap publishing to Google Business',
+                        style: TextStyle(
+                            color: TRColors.grayMid, fontSize: 12)),
+                  ],
+                ),
+              ),
+            ]),
+            const SizedBox(height: 20),
+            // How-to card
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFF4285F4).withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                    color: const Color(0xFF4285F4).withValues(alpha: 0.2)),
+              ),
+              child: const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('How to find your Location ID:',
+                      style: TextStyle(
+                          color: Color(0xFF4285F4),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600)),
+                  SizedBox(height: 8),
+                  Text(
+                    '1. Go to Google Cloud Console → APIs & Services\n'
+                    '2. Enable "My Business Business Information API"\n'
+                    '3. Call: GET https://mybusinessbusinessinformation.googleapis.com/v1/accounts\n'
+                    '4. Then: GET .../accounts/{id}/locations\n'
+                    '5. Copy the "name" field, e.g. accounts/123/locations/456\n\n'
+                    'Or check your GBP dashboard URL — the numbers after /locations/ is your location ID.',
+                    style: TextStyle(
+                        color: TRColors.grayMid,
+                        fontSize: 12,
+                        height: 1.5),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            // Input
+            Container(
+              decoration: BoxDecoration(
+                color: TRColors.navyDark,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                    color: TRColors.navyLight.withValues(alpha: 0.6)),
+              ),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 14, vertical: 4),
+              child: TextField(
+                controller: _ctrl,
+                style: const TextStyle(
+                    color: TRColors.white,
+                    fontSize: 14,
+                    fontFamily: 'monospace'),
+                decoration: const InputDecoration(
+                  border: InputBorder.none,
+                  hintText: 'accounts/123456789/locations/987654321',
+                  hintStyle:
+                      TextStyle(color: TRColors.grayMid, fontSize: 13),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            // Save button
+            GoldButton(
+              label: _saving ? 'Saving…' : 'Save Location ID',
+              icon: Icons.save_rounded,
+              onTap: _saving ? null : _save,
+            ),
+            const SizedBox(height: 8),
+            // Clear link
+            if (widget.current != null && widget.current!.isNotEmpty)
+              Center(
+                child: TextButton(
+                  onPressed: () {
+                    _ctrl.clear();
+                    _save();
+                  },
+                  child: const Text('Clear Location ID',
+                      style: TextStyle(
+                          color: TRColors.error, fontSize: 13)),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

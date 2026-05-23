@@ -136,6 +136,12 @@ class Company {
   // Stored in Firestore — never on the server or in app code.
   // Example: 'https://g.page/r/ABC123XYZ/review'
   final String? googleReviewLink;
+  // GBP API location resource name for programmatic posting (Phase 2).
+  // Format: 'accounts/123456789/locations/987654321'
+  // Found in GBP API → Accounts.locations.list, or GBP dashboard URL.
+  // When set, PublishSheet sends directly via Railway /publish_google_post.
+  // When null, PublishSheet falls back to manual copy/share/open flow.
+  final String? gbpLocationId;
   final DateTime createdAt;
 
   const Company({
@@ -150,6 +156,7 @@ class Company {
     this.googleConnected = false,
     this.googleBusinessId,
     this.googleReviewLink,
+    this.gbpLocationId,
     required this.createdAt,
   });
 
@@ -162,6 +169,7 @@ class Company {
     website: 'apexroofingco.com',
     teamSize: 12,
     googleConnected: true,
+    // gbpLocationId intentionally null in sample — admin sets it in Settings
     createdAt: DateTime(2024, 1, 15),
   );
 }

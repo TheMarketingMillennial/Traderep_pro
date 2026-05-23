@@ -56,6 +56,14 @@ class FirestoreService {
     });
   }
 
+  /// Persists the GBP location resource name for programmatic posting.
+  /// Pass null to clear (revert to manual Phase 1 flow).
+  Future<void> updateGbpLocationId(String? locationId) async {
+    await _db.collection('companies').doc(_companyId).update({
+      'gbp_location_id': locationId,
+    });
+  }
+
   // ══════════════════════════════════════════════════════════════════════════
   // USERS / TEAM
   // ══════════════════════════════════════════════════════════════════════════
@@ -427,6 +435,7 @@ class FirestoreService {
       logoUrl: d['logo_url'] as String?,
       googleConnected: (d['google_connected'] as bool?) ?? false,
       googleReviewLink: d['google_review_link'] as String?,
+      gbpLocationId: d['gbp_location_id'] as String?,
       teamSize: teamSizeInt,
       createdAt: (d['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );

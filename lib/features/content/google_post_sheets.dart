@@ -435,8 +435,15 @@ class PublishSheet extends StatefulWidget {
 
 class _PublishSheetState extends State<PublishSheet> {
   late TextEditingController _captionCtrl;
-  bool _copied = false;
+
+  // Manual-mode state
+  bool _copied  = false;
   bool _sharing = false;
+
+  // Auto-publish state (Phase 2 — gbpLocationId configured)
+  bool _publishing = false;
+  String? _publishError;
+  bool _publishedSuccessfully = false;
 
   static const _gbpUrl = 'https://business.google.com/create-post';
 
@@ -444,8 +451,8 @@ class _PublishSheetState extends State<PublishSheet> {
   void initState() {
     super.initState();
     _captionCtrl = TextEditingController(
-      text:
-          '${widget.post.suggestedCaption}\n\n${widget.post.suggestedHashtags.join(' ')}',
+      text: '${widget.post.suggestedCaption}\n\n'
+            '${widget.post.suggestedHashtags.join(' ')}',
     );
   }
 
@@ -454,6 +461,8 @@ class _PublishSheetState extends State<PublishSheet> {
     _captionCtrl.dispose();
     super.dispose();
   }
+
+  // ── Manual-mode helpers ───────────────────────────────────────────────────
 
   Future<void> _copyCaption() async {
     await Clipboard.setData(ClipboardData(text: _captionCtrl.text));
@@ -465,25 +474,19 @@ class _PublishSheetState extends State<PublishSheet> {
   Future<void> _shareImage() async {
     if (_sharing) return;
     setState(() => _sharing = true);
-
     try {
-      final afterUrl = widget.post.afterPhotoUrl;
-      final beforeUrl = widget.post.beforePhotoUrl;
-      final caption = _captionCtrl.text;
-
-      // Share text + the after photo URL (Phase 1: URL only; Phase 2: download + XFile)
       final shareText =
-          'Check out this project!\n\nAfter: $afterUrl\nBefore: $beforeUrl\n\n$caption';
-
+          'Check out this project!\n\n'
+          'After: ${widget.post.afterPhotoUrl}\n'
+          'Before: ${widget.post.beforePhotoUrl}\n\n'
+          '${_captionCtrl.text}';
       await Share.share(shareText, subject: 'TradeRep Pro — Project Showcase');
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Share failed: $e'),
-            backgroundColor: TRColors.error,
-          ),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Share failed: $e'),
+          backgroundColor: TRColors.error,
+        ));
       }
     }
     if (mounted) setState(() => _sharing = false);
@@ -495,35 +498,99 @@ class _PublishSheetState extends State<PublishSheet> {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } else {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-                'Could not open Google Business. Visit business.google.com'),
-            backgroundColor: TRColors.warning,
-          ),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Could not open Google Business. Visit business.google.com'),
+          backgroundColor: TRColors.warning,
+        ));
       }
     }
   }
 
   Future<void> _markPublished() async {
-    final state = context.read<AppState>();
-    state.updatePostStatus(widget.post.id, ContentStatus.published);
+    context.read<AppState>().updatePostStatus(widget.post.id, ContentStatus.published);
     if (mounted) Navigator.of(context).pop();
   }
 
+  // ── Phase 2: auto-publish via Railway ────────────────────────────────────
+
+  Future<void> _publishNow() async {
+    if (_publishing) return;
+    setState(() {
+      _publishing    = true;
+      _publishError  = null;
+    });
+
+    // Sync any caption edits the admin made back into the post before sending
+    final editedPost = ContentPost(
+      id:                widget.post.id,
+      jobId:             widget.post.jobId,
+      beforePhotoUrl:    widget.post.beforePhotoUrl,
+      afterPhotoUrl:     widget.post.afterPhotoUrl,
+      suggestedCaption:  _captionCtrl.text.trim(),
+      suggestedHashtags: const [],       // already embedded in caption text
+      projectSummary:    widget.post.projectSummary,
+      status:            widget.post.status,
+      scheduledFor:      widget.post.scheduledFor,
+      createdAt:         widget.post.createdAt,
+      sourceSubmissionId: widget.post.sourceSubmissionId,
+      companyId:         widget.post.companyId,
+    );
+
+    final result = await context.read<AppState>().publishToGbp(editedPost);
+
+    if (!mounted) return;
+
+    if (result.success) {
+      setState(() {
+        _publishing = false;
+        _publishedSuccessfully = true;
+      });
+      // Brief success pause then close
+      await Future.delayed(const Duration(seconds: 1, milliseconds: 500));
+      if (mounted) Navigator.of(context).pop();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Row(children: [
+            const Icon(Icons.check_circle_rounded,
+                color: TRColors.success, size: 18),
+            const SizedBox(width: 10),
+            Expanded(child: Text(
+              result.isMock
+                  ? 'Post published (mock mode). Set MOCK_MODE=false to go live.'
+                  : '🎉 Post is now live on Google Business Profile!',
+            )),
+          ]),
+          backgroundColor: TRColors.cardDark,
+          duration: const Duration(seconds: 4),
+        ));
+      }
+    } else {
+      setState(() {
+        _publishing   = false;
+        _publishError = result.error;
+      });
+    }
+  }
+
+  // ── Build ─────────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
+    final state        = context.watch<AppState>();
+    final locationId   = state.company?.gbpLocationId;
+    final isAutoMode   = locationId != null && locationId.isNotEmpty;
+
+    final headerSubtitle = isAutoMode
+        ? 'Auto-publish via Google Business API'
+        : 'Copy caption → Share image → Post to GBP';
+
     return Padding(
-      padding:
-          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
         decoration: const BoxDecoration(
           color: TRColors.navyMid,
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          border: Border(
-            top: BorderSide(color: TRColors.goldDark, width: 1.5),
-          ),
+          border: Border(top: BorderSide(color: TRColors.goldDark, width: 1.5)),
         ),
         child: DraggableScrollableSheet(
           initialChildSize: 0.92,
@@ -535,8 +602,7 @@ class _PublishSheetState extends State<PublishSheet> {
               // Drag handle
               Container(
                 margin: const EdgeInsets.only(top: 10, bottom: 6),
-                width: 40,
-                height: 4,
+                width: 40, height: 4,
                 decoration: BoxDecoration(
                   color: TRColors.grayMid.withValues(alpha: 0.4),
                   borderRadius: BorderRadius.circular(2),
@@ -557,21 +623,43 @@ class _PublishSheetState extends State<PublishSheet> {
                           color: TRColors.gold, size: 20),
                     ),
                     const SizedBox(width: 12),
-                    const Expanded(
+                    Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Publish to Google Business',
+                          const Text('Publish to Google Business',
                               style: TextStyle(
                                   color: TRColors.white,
                                   fontSize: 16,
                                   fontWeight: FontWeight.w700)),
-                          Text('Copy caption → Share image → Post to GBP',
-                              style: TextStyle(
+                          Text(headerSubtitle,
+                              style: const TextStyle(
                                   color: TRColors.grayMid, fontSize: 12)),
                         ],
                       ),
                     ),
+                    // Mode badge
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: isAutoMode
+                            ? const Color(0xFF4285F4).withValues(alpha: 0.15)
+                            : TRColors.navyLight,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        isAutoMode ? 'AUTO' : 'MANUAL',
+                        style: TextStyle(
+                          color: isAutoMode
+                              ? const Color(0xFF4285F4)
+                              : TRColors.grayMid,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
                     IconButton(
                       onPressed: () => Navigator.of(context).pop(),
                       icon: const Icon(Icons.close_rounded,
@@ -587,38 +675,30 @@ class _PublishSheetState extends State<PublishSheet> {
                   controller: controller,
                   padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
                   children: [
-                    // ── Before/After preview ────────────────────────────────
+                    // ── Before/After preview ──────────────────────────────
                     _SectionLabel(
-                        label: 'Photo Preview', icon: Icons.photo_library_rounded),
+                        label: 'Photo Preview',
+                        icon: Icons.photo_library_rounded),
                     const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _PhotoPreviewTile(
-                            label: 'BEFORE',
-                            url: widget.post.beforePhotoUrl.isNotEmpty
-                                ? widget.post.beforePhotoUrl
-                                : null,
-                            borderColor: TRColors.error.withValues(alpha: 0.6),
-                            height: 160,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: _PhotoPreviewTile(
-                            label: 'AFTER',
-                            url: widget.post.afterPhotoUrl.isNotEmpty
-                                ? widget.post.afterPhotoUrl
-                                : null,
-                            borderColor:
-                                TRColors.success.withValues(alpha: 0.6),
-                            height: 160,
-                          ),
-                        ),
-                      ],
-                    ),
+                    Row(children: [
+                      Expanded(child: _PhotoPreviewTile(
+                        label: 'BEFORE',
+                        url: widget.post.beforePhotoUrl.isNotEmpty
+                            ? widget.post.beforePhotoUrl : null,
+                        borderColor: TRColors.error.withValues(alpha: 0.6),
+                        height: 160,
+                      )),
+                      const SizedBox(width: 10),
+                      Expanded(child: _PhotoPreviewTile(
+                        label: 'AFTER',
+                        url: widget.post.afterPhotoUrl.isNotEmpty
+                            ? widget.post.afterPhotoUrl : null,
+                        borderColor: TRColors.success.withValues(alpha: 0.6),
+                        height: 160,
+                      )),
+                    ]),
                     const SizedBox(height: 20),
-                    // ── Caption editor ──────────────────────────────────────
+                    // ── Caption editor ────────────────────────────────────
                     _SectionLabel(
                         label: 'Caption + Hashtags (edit if needed)',
                         icon: Icons.edit_note_rounded),
@@ -636,64 +716,89 @@ class _PublishSheetState extends State<PublishSheet> {
                         maxLines: 8,
                         style: const TextStyle(
                             color: TRColors.white,
-                            fontSize: 14,
-                            height: 1.5),
+                            fontSize: 14, height: 1.5),
                         decoration: const InputDecoration.collapsed(
                           hintText: 'Caption…',
-                          hintStyle:
-                              TextStyle(color: TRColors.grayMid, fontSize: 14),
+                          hintStyle: TextStyle(
+                              color: TRColors.grayMid, fontSize: 14),
                         ),
                       ),
                     ),
                     const SizedBox(height: 20),
-                    // ── Step guide ──────────────────────────────────────────
-                    _StepGuide(),
-                    const SizedBox(height: 20),
-                    // ── Action buttons ──────────────────────────────────────
-                    _ActionButton(
-                      icon: _copied
-                          ? Icons.check_circle_rounded
-                          : Icons.copy_rounded,
-                      label: _copied ? 'Copied!' : 'Copy Caption',
-                      subtitle: 'Paste directly into your GBP post',
-                      color: _copied ? TRColors.success : TRColors.gold,
-                      onTap: _copyCaption,
-                    ),
-                    const SizedBox(height: 10),
-                    _ActionButton(
-                      icon: Icons.share_rounded,
-                      label: _sharing ? 'Opening share…' : 'Share After Photo',
-                      subtitle: 'Save image to camera roll or share to GBP',
-                      color: TRColors.grayLight,
-                      onTap: _sharing ? null : _shareImage,
-                    ),
-                    const SizedBox(height: 10),
-                    _ActionButton(
-                      icon: Icons.open_in_new_rounded,
-                      label: 'Open Google Business Profile',
-                      subtitle: 'Launches GBP app or website to create your post',
-                      color: const Color(0xFF4285F4), // Google Blue
-                      onTap: _openGbp,
-                    ),
-                    const SizedBox(height: 24),
-                    const Divider(color: TRColors.navyLight),
-                    const SizedBox(height: 16),
-                    // ── Mark published ──────────────────────────────────────
-                    GoldButton(
-                      label: 'Mark as Published',
-                      icon: Icons.check_circle_outline_rounded,
-                      onTap: _markPublished,
-                    ),
-                    const SizedBox(height: 8),
-                    Center(
-                      child: Text(
-                        'Tap after you\'ve posted to GBP to mark this complete.',
-                        style: TextStyle(
-                            color: TRColors.grayMid.withValues(alpha: 0.7),
-                            fontSize: 12),
-                        textAlign: TextAlign.center,
+
+                    // ═══════════════════════════════════════════════════════
+                    // AUTO MODE (Phase 2) — gbpLocationId is set
+                    // ═══════════════════════════════════════════════════════
+                    if (isAutoMode) ...[
+                      // Location info chip
+                      _GbpLocationChip(locationId: locationId),
+                      const SizedBox(height: 20),
+                      // Error banner
+                      if (_publishError != null) ...[
+                        _ErrorBanner(
+                          error: _publishError!,
+                          onDismiss: () => setState(() => _publishError = null),
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+                      // Publish Now button
+                      GoldButton(
+                        label: _publishedSuccessfully
+                            ? '✅ Published!'
+                            : _publishing
+                                ? 'Publishing…'
+                                : 'Publish Now to Google Business',
+                        icon: _publishedSuccessfully
+                            ? Icons.check_circle_rounded
+                            : Icons.send_rounded,
+                        onTap: (_publishing || _publishedSuccessfully)
+                            ? null
+                            : _publishNow,
                       ),
-                    ),
+                      const SizedBox(height: 12),
+                      // Fallback option
+                      const Divider(color: TRColors.navyLight),
+                      const SizedBox(height: 12),
+                      const Center(
+                        child: Text(
+                          'Or publish manually:',
+                          style: TextStyle(
+                              color: TRColors.grayMid, fontSize: 12),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      _buildManualActions(),
+                    ]
+
+                    // ═══════════════════════════════════════════════════════
+                    // MANUAL MODE (Phase 1) — no gbpLocationId yet
+                    // ═══════════════════════════════════════════════════════
+                    else ...[
+                      _StepGuide(),
+                      const SizedBox(height: 20),
+                      _buildManualActions(),
+                      const SizedBox(height: 24),
+                      const Divider(color: TRColors.navyLight),
+                      const SizedBox(height: 16),
+                      GoldButton(
+                        label: 'Mark as Published',
+                        icon: Icons.check_circle_outline_rounded,
+                        onTap: _markPublished,
+                      ),
+                      const SizedBox(height: 8),
+                      Center(
+                        child: Text(
+                          "Tap after you've posted to GBP to mark this complete.",
+                          style: TextStyle(
+                              color: TRColors.grayMid.withValues(alpha: 0.7),
+                              fontSize: 12),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                      // Setup prompt
+                      const SizedBox(height: 20),
+                      _SetupGbpBanner(),
+                    ],
                   ],
                 ),
               ),
@@ -703,6 +808,32 @@ class _PublishSheetState extends State<PublishSheet> {
       ),
     );
   }
+
+  Widget _buildManualActions() => Column(children: [
+    _ActionButton(
+      icon: _copied ? Icons.check_circle_rounded : Icons.copy_rounded,
+      label: _copied ? 'Copied!' : 'Copy Caption',
+      subtitle: 'Paste directly into your GBP post',
+      color: _copied ? TRColors.success : TRColors.gold,
+      onTap: _copyCaption,
+    ),
+    const SizedBox(height: 10),
+    _ActionButton(
+      icon: Icons.share_rounded,
+      label: _sharing ? 'Opening share…' : 'Share After Photo',
+      subtitle: 'Save image to camera roll or share to GBP',
+      color: TRColors.grayLight,
+      onTap: _sharing ? null : _shareImage,
+    ),
+    const SizedBox(height: 10),
+    _ActionButton(
+      icon: Icons.open_in_new_rounded,
+      label: 'Open Google Business Profile',
+      subtitle: 'Launches GBP app or website to create your post',
+      color: const Color(0xFF4285F4),
+      onTap: _openGbp,
+    ),
+  ]);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1027,6 +1158,143 @@ class _ActionButton extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PHASE 2 SUB-WIDGETS
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Shows the GBP location resource ID that will be posted to.
+class _GbpLocationChip extends StatelessWidget {
+  final String locationId;
+  const _GbpLocationChip({required this.locationId});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF4285F4).withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+            color: const Color(0xFF4285F4).withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.location_on_rounded,
+              color: Color(0xFF4285F4), size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'GBP Location Connected',
+                  style: TextStyle(
+                      color: Color(0xFF4285F4),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  locationId,
+                  style: const TextStyle(
+                      color: TRColors.grayMid,
+                      fontSize: 11,
+                      fontFamily: 'monospace'),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Red error banner shown when Railway publish call fails.
+class _ErrorBanner extends StatelessWidget {
+  final String error;
+  final VoidCallback onDismiss;
+  const _ErrorBanner({required this.error, required this.onDismiss});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: TRColors.error.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: TRColors.error.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.error_outline_rounded,
+              color: TRColors.error, size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              error,
+              style: const TextStyle(
+                  color: TRColors.error, fontSize: 13, height: 1.4),
+            ),
+          ),
+          GestureDetector(
+            onTap: onDismiss,
+            child: const Icon(Icons.close_rounded,
+                color: TRColors.error, size: 16),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Shown in manual mode to nudge admin toward setting up Phase 2.
+class _SetupGbpBanner extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: TRColors.goldDark.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: TRColors.goldDark.withValues(alpha: 0.2)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.bolt_rounded, color: TRColors.gold, size: 18),
+          const SizedBox(width: 10),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Enable one-tap publishing',
+                  style: TextStyle(
+                      color: TRColors.gold,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  'Set your GBP Location ID in Profile → Google Business Profile '
+                  'to publish directly from this screen — no copy/paste needed.',
+                  style: TextStyle(
+                      color: TRColors.grayMid,
+                      fontSize: 12,
+                      height: 1.4),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

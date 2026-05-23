@@ -15,7 +15,8 @@
 //     --dart-define=FIREBASE_AUTH_DOMAIN=traderep-pro.firebaseapp.com \
 //     --dart-define=FIREBASE_STORAGE_BUCKET=traderep-pro.firebasestorage.app \
 //     --dart-define=FIREBASE_DATABASE_URL=https://traderep-pro-default-rtdb.firebaseio.com \
-//     --dart-define=SMS_SERVER_URL=https://your-app.up.railway.app
+//     --dart-define=SMS_SERVER_URL=https://your-app.up.railway.app \
+//     --dart-define=GBP_SERVER_URL=https://your-app.up.railway.app
 //
 //   flutter build apk --release [same --dart-define flags]
 //
@@ -89,6 +90,18 @@ class AppConfig {
 
   static const String smsServerUrl = String.fromEnvironment(
     'SMS_SERVER_URL',
+    defaultValue: 'http://localhost:5061',
+  );
+
+  // ── GBP Proxy Server ──────────────────────────────────────────────────────
+  // Same Railway deployment as the SMS server — both endpoints live in
+  // sms_server.py (now also handles /gbp/* routes).
+  // In development: http://localhost:5061
+  // In production:  https://your-app.up.railway.app
+  // GbpService degrades gracefully when this URL is unreachable.
+
+  static const String gbpServerUrl = String.fromEnvironment(
+    'GBP_SERVER_URL',
     defaultValue: 'http://localhost:5061',
   );
 
