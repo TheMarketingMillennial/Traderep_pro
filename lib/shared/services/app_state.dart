@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import '../models/models.dart';
 import '../models/sms_models.dart';
 import '../../features/pricing/pricing_models.dart';
+import '../../core/config/app_config.dart';
 import 'firestore_service.dart';
 import 'sms_service.dart';
 import 'gbp_service.dart';
@@ -655,6 +656,14 @@ class AppState extends ChangeNotifier {
 
   // ─── Firestore Stream Initialization ──────────────────────────────────────
   Future<void> _initFirestoreStreams() async {
+    // Skip entirely when Firebase credentials are not present — app runs on
+    // sample data in preview / demo mode.
+    if (!AppConfig.isFirebaseConfigured) {
+      if (kDebugMode) debugPrint('AppState: Firebase not configured — using sample data only.');
+      _firestoreReady = false;
+      notifyListeners();
+      return;
+    }
     try {
       // Load company + user from Firestore first
       final fsCompany = await _fs.getCompany();

@@ -2,10 +2,10 @@
 // Live Firestore data layer. All reads are real-time streams.
 // Write operations update Firestore and notify listeners via AppState.
 
-import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
+import 'package:image_picker/image_picker.dart' show XFile;
 import '../models/models.dart';
 import '../../features/pricing/pricing_models.dart';
 
@@ -14,7 +14,10 @@ class FirestoreService {
   factory FirestoreService() => _instance;
   FirestoreService._internal();
 
-  final FirebaseFirestore _db = FirebaseFirestore.instance;
+  // Lazy getter — only accesses FirebaseFirestore.instance when Firebase is
+  // actually initialized. Prevents crash on web when no --dart-define secrets
+  // are provided (preview / demo mode).
+  FirebaseFirestore get _db => FirebaseFirestore.instance;
 
   // ─── Company ID (set after login) ─────────────────────────────────────────
   String _companyId = 'company_001';
@@ -351,10 +354,11 @@ class FirestoreService {
     for (final photo in photos) {
       if (photo.localPath != null && !kIsWeb) {
         try {
-          final file = File(photo.localPath!);
+          // Use XFile.readAsBytes() — works on all platforms, no dart:io needed.
+          final bytes = await XFile(photo.localPath!).readAsBytes();
           final ref = FirebaseStorage.instance
               .ref('photo_submissions/$_companyId/$jobId/$submissionId/${photo.id}.jpg');
-          final task = await ref.putFile(file);
+          final task = await ref.putData(Uint8List.fromList(bytes));
           final url = await task.ref.getDownloadURL();
           uploadedPhotos.add(SubmittedPhoto(
             id: photo.id,
@@ -586,4 +590,6 @@ class FirestoreService {
       'created_at': FieldValue.serverTimestamp(),
     };
   }
+
+
 }
