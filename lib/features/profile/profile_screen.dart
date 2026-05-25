@@ -361,9 +361,9 @@ class ProfileScreen extends StatelessWidget {
                 content: const Text('Are you sure you want to sign out?', style: TextStyle(color: TRColors.grayLight)),
                 actions: [
                   TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel', style: TextStyle(color: TRColors.grayLight))),
-                  TextButton(onPressed: () {
+                  TextButton(onPressed: () async {
                     Navigator.pop(context);
-                    state.logout();
+                    await state.logout();
                   }, child: const Text('Sign Out', style: TextStyle(color: TRColors.error))),
                 ],
               ));

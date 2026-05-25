@@ -4,6 +4,8 @@ import '../../core/theme/app_theme.dart';
 import '../../shared/services/app_state.dart';
 import '../../shared/widgets/tr_widgets.dart';
 import '../../shared/models/models.dart';
+import '../auth/sign_in_screen.dart';
+import '../auth/sign_up_screen.dart';
 
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
@@ -188,11 +190,22 @@ class _WelcomePage extends StatelessWidget {
             ),
           ),
           const Spacer(flex: 2),
-          GoldButton(label: 'Get Started — It\'s Free', icon: Icons.rocket_launch_rounded, onTap: onNext),
+          GoldButton(
+            label: 'Get Started — It\'s Free',
+            icon: Icons.rocket_launch_rounded,
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const SignUpScreen()),
+            ),
+          ),
           const SizedBox(height: 12),
           TextButton(
-            onPressed: () => context.read<AppState>().login(),
-            child: const Text('Already have an account? Sign in', style: TextStyle(color: TRColors.grayLight, fontSize: 14)),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const SignInScreen()),
+            ),
+            child: const Text(
+              'Already have an account? Sign in',
+              style: TextStyle(color: TRColors.grayLight, fontSize: 14),
+            ),
           ),
           const Spacer(),
         ],

@@ -1,12 +1,14 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/models.dart';
 import '../models/sms_models.dart';
 import '../../features/pricing/pricing_models.dart';
 import '../../core/config/app_config.dart';
 import 'firestore_service.dart';
+import 'auth_service.dart';
 import 'sms_service.dart';
 import 'gbp_service.dart';
 
@@ -617,9 +619,28 @@ class AppState extends ChangeNotifier {
   }
 
   // ─── Login ─────────────────────────────────────────────────────────────────
+
+  /// Demo / preview mode login — skips real auth.
   Future<void> login() async {
     _currentUser = TRUser.sample;
     _company = Company.sample;
+    _isLoggedIn = true;
+    _onboardingComplete = true;
+    notifyListeners();
+    await _initFirestoreStreams();
+  }
+
+  /// Called by SignInScreen / SignUpScreen after a successful Firebase Auth
+  /// credential. Sets companyId to the Firebase UID so Firestore reads the
+  /// correct company document, then loads all data.
+  Future<void> onFirebaseSignIn(User? firebaseUser) async {
+    if (firebaseUser == null) {
+      // Demo/preview fallback
+      await login();
+      return;
+    }
+    // Key all Firestore queries to the authenticated UID
+    _fs.setCompanyId(firebaseUser.uid);
     _isLoggedIn = true;
     _onboardingComplete = true;
     notifyListeners();
@@ -635,8 +656,10 @@ class AppState extends ChangeNotifier {
     await _initFirestoreStreams();
   }
 
-  void logout() {
+  /// Signs out of Firebase and resets all local state.
+  Future<void> logout() async {
     _cancelStreams();
+    await AuthService.instance.signOut();
     _isLoggedIn = false;
     _onboardingComplete = false;
     _currentUser = null;
