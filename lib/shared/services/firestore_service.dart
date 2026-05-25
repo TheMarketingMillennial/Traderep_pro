@@ -88,8 +88,9 @@ class FirestoreService {
 
   Future<TRUser?> getCurrentUser() async {
     try {
-      // Demo: always return user_001 (admin)
-      final doc = await _db.collection('users').doc('user_001').get();
+      // Use _companyId as the user UID (set to Firebase Auth UID after sign-in)
+      // Falls back gracefully when the doc doesn't exist yet (new account).
+      final doc = await _db.collection('users').doc(_companyId).get();
       if (!doc.exists || doc.data() == null) return null;
       return _userFromDoc(doc.data()!, doc.id);
     } catch (e) {

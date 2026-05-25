@@ -83,10 +83,15 @@ class _SignUpScreenState extends State<SignUpScreen> {
       return;
     }
 
-    // ── Success: navigate immediately, Firestore loads in background ──────────
-    debugPrint('[SignUpScreen] SignUp SUCCESS — triggering navigation');
+    // ── Success: clear spinner FIRST, then navigate ───────────────────────────
+    debugPrint('[SignUpScreen] SignUp SUCCESS — clearing spinner and triggering navigation');
+
+    // CRITICAL: clear loading state before onFirebaseSignIn so the spinner
+    // doesn't stay stuck if the widget lingers during the Navigator rebuild.
+    setState(() { _loading = false; });
+
     final state = context.read<AppState>();
-    state.onFirebaseSignIn(result.user); // void, fire-and-forget
+    state.onFirebaseSignIn(result.user); // void — notifyListeners() fires immediately
     debugPrint('[SignUpScreen] Navigation triggered via state.isLoggedIn = true');
   }
 

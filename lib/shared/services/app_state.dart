@@ -703,22 +703,36 @@ class AppState extends ChangeNotifier {
       return;
     }
     try {
+      const fsTimeout = Duration(seconds: 8); // per-call — never hangs navigation
+
       // Load company + user from Firestore first
-      final fsCompany = await _fs.getCompany();
+      final fsCompany = await _fs.getCompany().timeout(fsTimeout, onTimeout: () {
+        if (kDebugMode) debugPrint('[AppState] getCompany() timed out');
+        return null;
+      });
       if (fsCompany != null) {
         _company = fsCompany;
         _googleConnected = fsCompany.googleConnected;
       }
 
-      final fsUser = await _fs.getCurrentUser();
+      final fsUser = await _fs.getCurrentUser().timeout(fsTimeout, onTimeout: () {
+        if (kDebugMode) debugPrint('[AppState] getCurrentUser() timed out');
+        return null;
+      });
       if (fsUser != null) _currentUser = fsUser;
 
       // Load subscription from Firestore
-      final fsSub = await _fs.getSubscription();
+      final fsSub = await _fs.getSubscription().timeout(fsTimeout, onTimeout: () {
+        if (kDebugMode) debugPrint('[AppState] getSubscription() timed out');
+        return ActiveSubscription.demo;
+      });
       _subscription = fsSub;
 
       // Load analytics
-      final fsAnalytics = await _fs.getAnalytics();
+      final fsAnalytics = await _fs.getAnalytics().timeout(fsTimeout, onTimeout: () {
+        if (kDebugMode) debugPrint('[AppState] getAnalytics() timed out');
+        return AnalyticsSummary.sample;
+      });
       _analytics = fsAnalytics;
 
       notifyListeners();
