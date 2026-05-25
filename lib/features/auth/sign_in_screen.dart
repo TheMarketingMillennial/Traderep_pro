@@ -60,18 +60,22 @@ class _SignInScreenState extends State<SignInScreen> {
       return;
     }
 
-    // ── Auth succeeded — clear spinner FIRST, then navigate ─────────────────
-    debugPrint('[SignInScreen] Auth SUCCESS — clearing spinner and triggering navigation');
+    // ── Auth succeeded — clear stack and navigate to MainShell ─────────────
+    debugPrint('[SignInScreen] Auth SUCCESS — clearing stack and navigating to MainShell');
 
-    // CRITICAL: clear loading state before onFirebaseSignIn so the spinner
-    // doesn't stay stuck if the widget lingers during the Navigator rebuild.
+    // CRITICAL: clear loading state before navigating so the spinner doesn't
+    // linger if the widget stays in tree during the Navigator transition.
     setState(() { _loading = false; });
 
+    // Update state (triggers isLoggedIn = true) THEN pop the entire Navigator
+    // stack back to root so MaterialApp's home swap to MainShell is visible.
+    // Without this, SignInScreen sits on top of MainShell and the user sees
+    // a blank/frozen screen until they press the back button.
     final state = context.read<AppState>();
-    state.onFirebaseSignIn(result.user); // void — notifyListeners() fires immediately
+    state.onFirebaseSignIn(result.user); // sets isLoggedIn = true immediately
 
-    debugPrint('[SignInScreen] Navigation triggered via state.isLoggedIn = true');
-    // MaterialApp Consumer rebuilds to MainShell automatically — no pop needed.
+    debugPrint('[SignInScreen] Popping to root — MainShell will be home');
+    Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
   // ─── Forgot Password ───────────────────────────────────────────────────────
