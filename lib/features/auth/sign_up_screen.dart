@@ -56,15 +56,14 @@ class _SignUpScreenState extends State<SignUpScreen> {
   }
 
   Future<void> _signUp() async {
-    if (!_formKey.currentState!.validate()) return;
-    setState(() { _loading = true; _error = null; });
-
-    // Demo mode
-    if (!AppConfig.isFirebaseConfigured) {
-      await Future.delayed(const Duration(milliseconds: 800));
-      if (mounted) context.read<AppState>().login();
+    debugPrint('[SignUpScreen] Create Account pressed');
+    if (!_formKey.currentState!.validate()) {
+      debugPrint('[SignUpScreen] Form validation failed');
       return;
     }
+    setState(() { _loading = true; _error = null; });
+    debugPrint('[SignUpScreen] Firebase configured: ${AppConfig.isFirebaseConfigured}');
+    debugPrint('[SignUpScreen] Calling AuthService.signUp...');
 
     final result = await AuthService.instance.signUp(
       email: _emailCtrl.text,
@@ -75,12 +74,20 @@ class _SignUpScreenState extends State<SignUpScreen> {
       phone: _phoneCtrl.text.trim(),
     );
 
+    debugPrint('[SignUpScreen] result: success=${result.success}, error=${result.error}');
     if (!mounted) return;
-    if (result.success) {
-      await context.read<AppState>().onFirebaseSignIn(result.user!);
-    } else {
+
+    if (!result.success) {
+      debugPrint('[SignUpScreen] SignUp FAILED — showing error');
       setState(() { _loading = false; _error = result.error; });
+      return;
     }
+
+    // ── Success: navigate immediately, Firestore loads in background ──────────
+    debugPrint('[SignUpScreen] SignUp SUCCESS — triggering navigation');
+    final state = context.read<AppState>();
+    state.onFirebaseSignIn(result.user); // void, fire-and-forget
+    debugPrint('[SignUpScreen] Navigation triggered via state.isLoggedIn = true');
   }
 
   @override

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -10,38 +11,23 @@ import 'shared/services/app_state.dart';
 import 'features/onboarding/onboarding_screen.dart';
 import 'features/auth/main_shell.dart';
 
-// Global error capture for web preview debugging
-String? _startupError;
-
 Future<void> main() async {
   await runZonedGuarded(() async {
-    // Catch all Flutter framework errors and show on screen
     FlutterError.onError = (FlutterErrorDetails details) {
-      debugPrint('=== FLUTTER ERROR ===');
-      debugPrint(details.exceptionAsString());
-      debugPrint(details.stack.toString());
-      _startupError = '${details.exceptionAsString()}\n\n${details.stack}';
+      debugPrint('[FlutterError] ${details.exceptionAsString()}');
+      debugPrint('${details.stack}');
     };
 
     WidgetsFlutterBinding.ensureInitialized();
+    debugPrint('[main] Flutter binding initialized');
 
-    // ── Firebase Init ────────────────────────────────────────────────────────
-    // Only initialise when real credentials are present (injected via
-    // --dart-define at build time). Without them the app runs on local
-    // sample data — safe for web previews and demos.
-    if (AppConfig.isFirebaseConfigured) {
-      try {
-        await Firebase.initializeApp(
-          options: DefaultFirebaseOptions.currentPlatform,
-        );
-      } catch (e) {
-        debugPrint('Firebase init error: $e');
-      }
-    } else {
-      debugPrint('Firebase not configured — running on sample data.');
-    }
+    // ── Firebase Init ──────────────────────────────────────────────────────
+    // Android: google-services.json provides config — no dart-define needed.
+    //          DefaultFirebaseOptions.android reads from the JSON at runtime.
+    // Web:     Needs --dart-define flags. If missing, runs in demo mode.
+    await _initFirebase();
 
-    // Web: skip orientation lock (not supported on web)
+    // Web: skip orientation lock (throws on web)
     try {
       SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
@@ -53,19 +39,55 @@ Future<void> main() async {
       ]);
     } catch (_) {}
 
+    debugPrint('[main] Launching TradeRepApp');
     runApp(const TradeRepApp());
   }, (error, stack) {
-    // Catch all zone errors (unhandled async exceptions)
-    debugPrint('=== ZONE ERROR ===');
-    debugPrint('$error');
+    debugPrint('[ZoneError] $error');
     debugPrint('$stack');
-    _startupError = '$error\n\n$stack';
-    // Show error app
     runApp(_ErrorApp(error: '$error'));
   });
 }
 
-// Shown when an unrecoverable startup error occurs
+Future<void> _initFirebase() async {
+  // ── Android / iOS: always attempt init (google-services.json handles creds)
+  // ── Web: only attempt init if --dart-define keys are present
+  final shouldInit = !kIsWeb || AppConfig.firebaseApiKey.isNotEmpty;
+
+  if (!shouldInit) {
+    debugPrint('[Firebase] No web credentials — running in demo mode');
+    return;
+  }
+
+  try {
+    debugPrint('[Firebase] Initializing...');
+    if (kIsWeb) {
+      // Web needs explicit options from --dart-define
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      ).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => throw TimeoutException('Firebase init timed out'),
+      );
+    } else {
+      // Android/iOS: google-services.json / GoogleService-Info.plist
+      // DefaultFirebaseOptions reads from the bundled JSON automatically
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      ).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => throw TimeoutException('Firebase init timed out'),
+      );
+    }
+    AppConfig.markFirebaseInitialized();
+    debugPrint('[Firebase] Initialized ✅ (apps: ${Firebase.apps.length})');
+  } on TimeoutException catch (e) {
+    debugPrint('[Firebase] Init timeout: $e — running in demo mode');
+  } catch (e) {
+    debugPrint('[Firebase] Init error: $e — running in demo mode');
+  }
+}
+
+// ─── Error screen shown when a fatal zone error occurs ───────────────────────
 class _ErrorApp extends StatelessWidget {
   final String error;
   const _ErrorApp({required this.error});
@@ -75,8 +97,8 @@ class _ErrorApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       home: Scaffold(
-        backgroundColor: const Color(0xFF1a1a2e),
-        body: Center(
+        backgroundColor: const Color(0xFF0A1730),
+        body: SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: Column(
@@ -85,10 +107,14 @@ class _ErrorApp extends StatelessWidget {
                 const Icon(Icons.error_outline, color: Colors.red, size: 48),
                 const SizedBox(height: 16),
                 const Text(
-                  'App Error',
-                  style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+                  'Startup Error',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
@@ -96,8 +122,12 @@ class _ErrorApp extends StatelessWidget {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    error,
-                    style: const TextStyle(color: Colors.redAccent, fontSize: 11, fontFamily: 'monospace'),
+                    error.length > 400 ? '${error.substring(0, 400)}...' : error,
+                    style: const TextStyle(
+                      color: Colors.redAccent,
+                      fontSize: 11,
+                      fontFamily: 'monospace',
+                    ),
                   ),
                 ),
               ],
@@ -109,6 +139,7 @@ class _ErrorApp extends StatelessWidget {
   }
 }
 
+// ─── Root app ─────────────────────────────────────────────────────────────────
 class TradeRepApp extends StatelessWidget {
   const TradeRepApp({super.key});
 

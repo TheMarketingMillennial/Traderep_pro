@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/models.dart';
@@ -632,19 +633,33 @@ class AppState extends ChangeNotifier {
 
   /// Called by SignInScreen / SignUpScreen after a successful Firebase Auth
   /// credential. Sets companyId to the Firebase UID so Firestore reads the
-  /// correct company document, then loads all data.
-  Future<void> onFirebaseSignIn(User? firebaseUser) async {
+  /// correct company document.
+  ///
+  /// IMPORTANT: notifyListeners() fires BEFORE _initFirestoreStreams() so the
+  /// MaterialApp Consumer rebuilds to MainShell immediately. Firestore data
+  /// loads in the background — the UI shows sample data first, then updates
+  /// as streams emit.
+  void onFirebaseSignIn(User? firebaseUser) {
+    debugPrint('[AppState] onFirebaseSignIn() — uid: ${firebaseUser?.uid}');
     if (firebaseUser == null) {
-      // Demo/preview fallback
-      await login();
+      debugPrint('[AppState] No firebase user — falling back to demo login');
+      // Fire-and-forget demo login (does not block caller)
+      login().catchError((e) {
+        if (kDebugMode) debugPrint('[AppState] demo login error: $e');
+      });
       return;
     }
     // Key all Firestore queries to the authenticated UID
     _fs.setCompanyId(firebaseUser.uid);
     _isLoggedIn = true;
     _onboardingComplete = true;
-    notifyListeners();
-    await _initFirestoreStreams();
+    debugPrint('[AppState] isLoggedIn = true — notifyListeners() → MainShell');
+    notifyListeners(); // ← triggers navigation to MainShell IMMEDIATELY
+    // Load Firestore data in background — never blocks navigation
+    _initFirestoreStreams().catchError((e) {
+      if (kDebugMode) debugPrint('[AppState] _initFirestoreStreams error: $e');
+    });
+    debugPrint('[AppState] _initFirestoreStreams() launched in background');
   }
 
   Future<void> completeOnboarding() async {
