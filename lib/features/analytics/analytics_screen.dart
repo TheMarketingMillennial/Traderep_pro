@@ -223,6 +223,13 @@ class AnalyticsScreen extends StatelessWidget {
 
   Widget _buildChart(AnalyticsSummary analytics) {
     final data = analytics.monthlyData;
+    if (data.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.fromLTRB(20, 20, 20, 0),
+        child: Center(child: Text('No data yet — complete jobs to see your chart',
+            style: TextStyle(color: TRColors.grayMid, fontSize: 13))),
+      );
+    }
     final maxJobs = data.map((d) => d.jobs).reduce((a, b) => a > b ? a : b);
 
     return Padding(

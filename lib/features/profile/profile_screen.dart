@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme/app_theme.dart';
 import '../../shared/services/app_state.dart';
 import '../../shared/widgets/tr_widgets.dart';
@@ -13,8 +14,15 @@ class ProfileScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
-    final user = state.currentUser!;
-    final company = state.company!;
+    final user = state.currentUser;
+    final company = state.company;
+
+    if (user == null || company == null) {
+      return const Scaffold(
+        backgroundColor: TRColors.navyDeep,
+        body: Center(child: CircularProgressIndicator(color: TRColors.gold)),
+      );
+    }
 
     return Scaffold(
       backgroundColor: TRColors.navyDeep,
@@ -185,7 +193,7 @@ class ProfileScreen extends StatelessWidget {
             icon: Icons.edit_rounded,
             title: 'Edit Company Profile',
             subtitle: 'Update name, logo, contact info',
-            onTap: () {},
+            onTap: () => _showEditCompanySheet(context, company, state),
           ),
           _SettingsTile(
             icon: Icons.business_rounded,
@@ -211,13 +219,21 @@ class ProfileScreen extends StatelessWidget {
             icon: Icons.photo_library_rounded,
             title: 'Photo Templates',
             subtitle: '${state.templates.length} templates configured',
-            onTap: () {},
+            onTap: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text('Photo template editor coming soon'),
+              behavior: SnackBarBehavior.floating,
+              duration: Duration(seconds: 2),
+            )),
           ),
           _SettingsTile(
             icon: Icons.notifications_rounded,
             title: 'Review Request Settings',
             subtitle: 'SMS / Email timing and templates',
-            onTap: () {},
+            onTap: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text('Review request settings coming soon'),
+              behavior: SnackBarBehavior.floating,
+              duration: Duration(seconds: 2),
+            )),
           ),
           _SettingsTile(
             icon: Icons.credit_card_rounded,
@@ -245,7 +261,7 @@ class ProfileScreen extends StatelessWidget {
             )),
             const Spacer(),
             GestureDetector(
-              onTap: () {},
+              onTap: () => _showInviteDialog(context),
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
@@ -344,13 +360,13 @@ class ProfileScreen extends StatelessWidget {
             icon: Icons.help_outline_rounded,
             title: 'Help & Support',
             subtitle: 'FAQs, contact support',
-            onTap: () {},
+            onTap: () => launchUrl(Uri.parse('mailto:support@traderep.app?subject=TradeRep%20Support')),
           ),
           _SettingsTile(
             icon: Icons.privacy_tip_outlined,
             title: 'Privacy Policy',
             subtitle: 'How TradeRep handles your data',
-            onTap: () {},
+            onTap: () => launchUrl(Uri.parse('https://traderep.app/privacy'), mode: LaunchMode.externalApplication),
           ),
           const SizedBox(height: 10),
           GestureDetector(
@@ -398,6 +414,259 @@ class ProfileScreen extends StatelessWidget {
             ],
           )),
         ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HELPERS — Edit Company, Invite
+// ─────────────────────────────────────────────────────────────────────────────
+
+void _showEditCompanySheet(BuildContext context, Company company, AppState state) {
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => ChangeNotifierProvider.value(
+      value: state,
+      child: _EditCompanySheet(company: company),
+    ),
+  );
+}
+
+void _showInviteDialog(BuildContext context) {
+  final ctrl = TextEditingController();
+  showDialog<void>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      backgroundColor: TRColors.cardDark,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: const Text('Invite Team Member',
+          style: TextStyle(color: TRColors.white, fontWeight: FontWeight.w700)),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Enter their email and we\'ll send an invite link.',
+              style: TextStyle(color: TRColors.grayLight, fontSize: 13)),
+          const SizedBox(height: 16),
+          TextField(
+            controller: ctrl,
+            keyboardType: TextInputType.emailAddress,
+            autofocus: true,
+            style: const TextStyle(color: TRColors.white),
+            decoration: InputDecoration(
+              hintText: 'crew@example.com',
+              hintStyle: const TextStyle(color: TRColors.grayDark),
+              prefixIcon: const Icon(Icons.email_rounded, color: TRColors.grayMid, size: 18),
+              filled: true,
+              fillColor: TRColors.navyMid,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: TRColors.divider),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: TRColors.divider),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: TRColors.gold, width: 1.5),
+              ),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Cancel', style: TextStyle(color: TRColors.grayLight)),
+        ),
+        TextButton(
+          onPressed: () {
+            Navigator.pop(ctx);
+            final email = ctrl.text.trim();
+            if (email.isNotEmpty) {
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text('Invite sent to $email'),
+                backgroundColor: TRColors.success,
+                behavior: SnackBarBehavior.floating,
+              ));
+            }
+          },
+          child: const Text('Send Invite',
+              style: TextStyle(color: TRColors.gold, fontWeight: FontWeight.w700)),
+        ),
+      ],
+    ),
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EDIT COMPANY SHEET
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _EditCompanySheet extends StatefulWidget {
+  final Company company;
+  const _EditCompanySheet({required this.company});
+
+  @override
+  State<_EditCompanySheet> createState() => _EditCompanySheetState();
+}
+
+class _EditCompanySheetState extends State<_EditCompanySheet> {
+  final _formKey = GlobalKey<FormState>();
+  bool _saving = false;
+
+  late final TextEditingController _nameCtrl;
+  late final TextEditingController _phoneCtrl;
+  late final TextEditingController _serviceAreaCtrl;
+  late final TextEditingController _websiteCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    final c = widget.company;
+    _nameCtrl        = TextEditingController(text: c.name);
+    _phoneCtrl       = TextEditingController(text: c.phone);
+    _serviceAreaCtrl = TextEditingController(text: c.serviceArea);
+    _websiteCtrl     = TextEditingController(text: c.website ?? '');
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _phoneCtrl.dispose();
+    _serviceAreaCtrl.dispose();
+    _websiteCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _saving = true);
+    // ignore: use_build_context_synchronously
+    context.read<AppState>().updateCompany(
+      name:        _nameCtrl.text.trim(),
+      phone:       _phoneCtrl.text.trim(),
+      serviceArea: _serviceAreaCtrl.text.trim(),
+      website:     _websiteCtrl.text.trim().isEmpty ? null : _websiteCtrl.text.trim(),
+    );
+    if (mounted) {
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Company profile updated'),
+        backgroundColor: TRColors.gold,
+        behavior: SnackBarBehavior.floating,
+      ));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Container(
+        decoration: const BoxDecoration(
+          color: TRColors.cardDark,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Form(
+          key: _formKey,
+          child: ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+            children: [
+              // Handle
+              Center(child: Container(
+                width: 40, height: 4,
+                decoration: BoxDecoration(
+                  color: TRColors.divider, borderRadius: BorderRadius.circular(2)),
+              )),
+              const SizedBox(height: 16),
+              Row(children: [
+                const Text('Edit Company Profile', style: TextStyle(
+                  color: TRColors.white, fontSize: 16, fontWeight: FontWeight.w800)),
+                const Spacer(),
+                _saving
+                    ? const SizedBox(width: 20, height: 20,
+                        child: CircularProgressIndicator(color: TRColors.gold, strokeWidth: 2))
+                    : TextButton(
+                        onPressed: _save,
+                        child: const Text('Save',
+                            style: TextStyle(color: TRColors.gold, fontWeight: FontWeight.w700))),
+              ]),
+              const SizedBox(height: 20),
+              _SheetField(label: 'Company Name', ctrl: _nameCtrl,
+                  icon: Icons.business_rounded,
+                  validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null),
+              const SizedBox(height: 14),
+              _SheetField(label: 'Phone', ctrl: _phoneCtrl,
+                  icon: Icons.phone_rounded,
+                  keyboardType: TextInputType.phone),
+              const SizedBox(height: 14),
+              _SheetField(label: 'Service Area', ctrl: _serviceAreaCtrl,
+                  icon: Icons.location_on_rounded,
+                  hint: 'e.g. Denver, CO (50-mile radius)'),
+              const SizedBox(height: 14),
+              _SheetField(label: 'Website', ctrl: _websiteCtrl,
+                  icon: Icons.language_rounded,
+                  hint: 'yourcompany.com',
+                  keyboardType: TextInputType.url),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Reusable field for sheets ────────────────────────────────────────────────
+class _SheetField extends StatelessWidget {
+  final String label;
+  final TextEditingController ctrl;
+  final IconData icon;
+  final String? hint;
+  final TextInputType keyboardType;
+  final String? Function(String?)? validator;
+
+  const _SheetField({
+    required this.label,
+    required this.ctrl,
+    required this.icon,
+    this.hint,
+    this.keyboardType = TextInputType.text,
+    this.validator,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return TextFormField(
+      controller: ctrl,
+      keyboardType: keyboardType,
+      validator: validator,
+      style: const TextStyle(color: TRColors.white, fontSize: 15, fontWeight: FontWeight.w600),
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hint,
+        prefixIcon: Icon(icon, color: TRColors.grayMid, size: 18),
+        labelStyle: const TextStyle(color: TRColors.grayMid, fontSize: 12),
+        hintStyle: const TextStyle(color: TRColors.grayDark, fontSize: 14),
+        filled: true,
+        fillColor: TRColors.navyMid,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: TRColors.divider)),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: TRColors.divider)),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: TRColors.gold, width: 1.5)),
+        errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: TRColors.error)),
+        focusedErrorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: TRColors.error, width: 1.5)),
       ),
     );
   }

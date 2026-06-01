@@ -55,9 +55,10 @@ class AuthService {
     debugPrint('[AuthService] Firebase available: $isAvailable');
 
     if (!isAvailable) {
-      debugPrint('[AuthService] Demo mode — bypassing Firebase');
-      await Future.delayed(const Duration(milliseconds: 500));
-      return AuthResult.demo();
+      debugPrint('[AuthService] Firebase not configured — blocking sign-in');
+      return AuthResult.fail(
+        'Authentication is not configured. Please contact support.',
+      );
     }
 
     try {
@@ -104,9 +105,10 @@ class AuthService {
     debugPrint('[AuthService] Firebase available: $isAvailable');
 
     if (!isAvailable) {
-      debugPrint('[AuthService] Demo mode — bypassing Firebase sign-up');
-      await Future.delayed(const Duration(milliseconds: 600));
-      return AuthResult.demo();
+      debugPrint('[AuthService] Firebase not configured — blocking sign-up');
+      return AuthResult.fail(
+        'Account creation is not available. Please contact support.',
+      );
     }
 
     try {

@@ -767,6 +767,17 @@ class AnalyticsSummary {
     required this.monthlyData,
   });
 
+  static AnalyticsSummary get empty => const AnalyticsSummary(
+    projectsCompleted: 0,
+    reviewsGenerated: 0,
+    photosUploaded: 0,
+    googlePosts: 0,
+    reviewResponseRate: 0,
+    avgRating: 0,
+    avgPhotoScore: 0,
+    monthlyData: [],
+  );
+
   static AnalyticsSummary get sample => const AnalyticsSummary(
     projectsCompleted: 47,
     reviewsGenerated: 38,

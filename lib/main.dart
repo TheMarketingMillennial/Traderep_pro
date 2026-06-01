@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter_stripe/flutter_stripe.dart';
 import 'core/theme/app_theme.dart';
 import 'core/config/app_config.dart';
 import 'core/firebase/firebase_options.dart';
@@ -20,6 +21,14 @@ Future<void> main() async {
 
     WidgetsFlutterBinding.ensureInitialized();
     debugPrint('[main] Flutter binding initialized');
+
+    // ── Stripe Init ────────────────────────────────────────────────────────
+    // Only initialize on mobile — Stripe SDK is not supported on web.
+    if (!kIsWeb) {
+      Stripe.publishableKey = AppConfig.stripePublishableKey;
+      await Stripe.instance.applySettings();
+      debugPrint('[Stripe] Initialized ✅');
+    }
 
     // ── Firebase Init ──────────────────────────────────────────────────────
     // Android: google-services.json provides config — no dart-define needed.

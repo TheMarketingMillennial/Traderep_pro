@@ -4,7 +4,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_theme.dart';
-import '../../core/config/app_config.dart';
 import '../../shared/services/app_state.dart';
 import '../../shared/services/auth_service.dart';
 import '../../shared/widgets/tr_widgets.dart';
@@ -42,7 +41,6 @@ class _SignInScreenState extends State<SignInScreen> {
     }
 
     setState(() { _loading = true; _error = null; });
-    debugPrint('[SignInScreen] Firebase configured: ${AppConfig.isFirebaseConfigured}');
     debugPrint('[SignInScreen] Calling AuthService.signIn...');
 
     final result = await AuthService.instance.signIn(
@@ -134,12 +132,6 @@ class _SignInScreenState extends State<SignInScreen> {
                 ),
                 const SizedBox(height: 36),
 
-                // Demo mode banner
-                if (!AppConfig.isFirebaseConfigured) ...[
-                  _DemoBanner(),
-                  const SizedBox(height: 4),
-                ],
-
                 // Email
                 _label('Email address'),
                 const SizedBox(height: 6),
@@ -152,7 +144,8 @@ class _SignInScreenState extends State<SignInScreen> {
                   decoration: _inputDeco('you@example.com', Icons.email_outlined),
                   validator: (v) {
                     if (v == null || v.trim().isEmpty) return 'Email is required';
-                    if (!v.contains('@')) return 'Enter a valid email';
+                    final emailRegex = RegExp(r'^[\w.+\-]+@[a-zA-Z0-9\-]+\.[a-zA-Z]{2,}$');
+                    if (!emailRegex.hasMatch(v.trim())) return 'Enter a valid email address';
                     return null;
                   },
                 ),
@@ -178,7 +171,7 @@ class _SignInScreenState extends State<SignInScreen> {
                   ),
                   validator: (v) {
                     if (v == null || v.isEmpty) return 'Password is required';
-                    if (v.length < 6) return 'Password must be at least 6 characters';
+                    if (v.length < 8) return 'Password must be at least 8 characters';
                     return null;
                   },
                 ),
@@ -292,31 +285,6 @@ class _SignInScreenState extends State<SignInScreen> {
 }
 
 // ─── Shared auth widgets — used by SignInScreen and SignUpScreen ──────────────
-
-class _DemoBanner extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: TRColors.goldDim,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: TRColors.gold.withValues(alpha: 0.3)),
-      ),
-      child: const Row(children: [
-        Icon(Icons.info_outline_rounded, color: TRColors.gold, size: 16),
-        SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            'Preview mode — enter any email & password to continue.',
-            style: TextStyle(color: TRColors.gold, fontSize: 12),
-          ),
-        ),
-      ]),
-    );
-  }
-}
 
 class _ErrorBox extends StatelessWidget {
   final String message;

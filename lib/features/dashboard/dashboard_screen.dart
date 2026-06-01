@@ -6,9 +6,11 @@ import '../../shared/widgets/tr_widgets.dart';
 import '../../shared/models/models.dart';
 import '../pricing/trial_widgets.dart';
 import '../photos/photo_approval_screen.dart';
+import '../profile/profile_screen.dart';
 
 class DashboardScreen extends StatelessWidget {
-  const DashboardScreen({super.key});
+  final void Function(int)? onSwitchTab;
+  const DashboardScreen({super.key, this.onSwitchTab});
 
   @override
   Widget build(BuildContext context) {
@@ -77,7 +79,19 @@ class DashboardScreen extends StatelessWidget {
               Stack(
                 children: [
                   IconButton(
-                    onPressed: () {},
+                    onPressed: () {
+                      if (state.pendingSubmissions.isNotEmpty || state.pendingPosts.isNotEmpty) {
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const PhotoApprovalScreen(),
+                        ));
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                          content: Text('No pending notifications'),
+                          behavior: SnackBarBehavior.floating,
+                          duration: Duration(seconds: 2),
+                        ));
+                      }
+                    },
                     icon: const Icon(Icons.notifications_outlined, color: TRColors.white, size: 24),
                   ),
                   if (state.pendingPosts.isNotEmpty)
@@ -97,7 +111,9 @@ class DashboardScreen extends StatelessWidget {
               ),
               const SizedBox(width: 4),
               GestureDetector(
-                onTap: () {},
+                onTap: () => Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => const ProfileScreen(),
+                )),
                 child: Container(
                   width: 40, height: 40,
                   decoration: BoxDecoration(
@@ -283,7 +299,7 @@ class DashboardScreen extends StatelessWidget {
           SectionHeader(
             title: 'Active Jobs',
             action: 'View All',
-            onAction: () {},
+            onAction: () => onSwitchTab?.call(1),
           ),
           const SizedBox(height: 12),
           ...jobs.map((job) => JobCard(job: job)),
@@ -301,7 +317,9 @@ class DashboardScreen extends StatelessWidget {
           SectionHeader(
             title: 'Team Activity',
             action: 'Manage',
-            onAction: () {},
+            onAction: () => Navigator.push(context, MaterialPageRoute(
+              builder: (_) => const ProfileScreen(),
+            )),
           ),
           const SizedBox(height: 12),
           ...state.team.take(4).map((member) => _TeamMemberTile(user: member)),

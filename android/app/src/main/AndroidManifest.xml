@@ -1,5 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.tradereppro.rep">
+
+    <!-- Required for Firebase, Stripe, Twilio, and all network calls -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Required for Stripe payment sheet to check network state -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+
     <application
         android:label="TradeRep Pro"
         android:name="${applicationName}"

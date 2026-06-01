@@ -53,6 +53,20 @@ class FirestoreService {
     }
   }
 
+  Future<void> updateCompanyFields({
+    required String name,
+    required String phone,
+    required String serviceArea,
+    String? website,
+  }) async {
+    await _db.collection('companies').doc(_companyId).update({
+      'name': name,
+      'phone': phone,
+      'service_area': serviceArea,
+      'website': website,
+    });
+  }
+
   Future<void> updateGoogleConnected(bool connected) async {
     await _db.collection('companies').doc(_companyId).update({
       'google_connected': connected,
@@ -120,6 +134,20 @@ class FirestoreService {
 
   Future<void> addJob(Job job) async {
     await _db.collection('jobs').doc(job.id).set(_jobToDoc(job));
+  }
+
+  Future<void> updateJobFields(Job job) async {
+    await _db.collection('jobs').doc(job.id).update({
+      'customer_name': job.customerName,
+      'address': job.address,
+      'phone': job.phone,
+      'email': job.email,
+      'job_type': job.jobType,
+      'notes': job.notes,
+      'start_date': job.startDate != null
+          ? Timestamp.fromDate(job.startDate!)
+          : null,
+    });
   }
 
   Future<void> updateJobStatus(String jobId, JobStatus status) async {
@@ -310,7 +338,38 @@ class FirestoreService {
       );
     } catch (e) {
       if (kDebugMode) debugPrint('FirestoreService getSubscription error: $e');
-      return ActiveSubscription.demo;
+      // Return none (not demo) so new users without a Firestore record
+      // are correctly shown the trial gate / pricing screen.
+      return ActiveSubscription.none;
+    }
+  }
+
+  /// Persists a newly created Stripe subscription to Firestore so the
+  /// webhook and future app launches can read the correct state.
+  Future<void> saveSubscription({
+    required String tier,          // 'starter' | 'growth' | 'pro'
+    required String status,        // 'trial'
+    required DateTime trialStartDate,
+    required DateTime trialEndDate,
+    String? stripeCustomerId,
+    String? stripeSubscriptionId,
+  }) async {
+    try {
+      await _db
+          .collection('saas_metrics')
+          .doc('metrics_current')
+          .set({
+        'plan_tier': tier,
+        'subscription_status': status,
+        'trial_start_date': Timestamp.fromDate(trialStartDate),
+        'trial_end_date': Timestamp.fromDate(trialEndDate),
+        if (stripeCustomerId != null) 'stripe_customer_id': stripeCustomerId,
+        if (stripeSubscriptionId != null)
+          'stripe_subscription_id': stripeSubscriptionId,
+        'updated_at': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (e) {
+      if (kDebugMode) debugPrint('FirestoreService saveSubscription error: $e');
     }
   }
 

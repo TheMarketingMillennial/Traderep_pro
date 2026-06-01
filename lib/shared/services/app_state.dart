@@ -50,7 +50,7 @@ class AppState extends ChangeNotifier {
   }
 
   // ─── Jobs ───────────────────────────────────────────────────────────────────
-  List<Job> _jobs = Job.sampleJobs;
+  List<Job> _jobs = [];
   List<Job> get jobs => _jobs;
   List<Job> get activeJobs =>
       _jobs.where((j) => j.status != JobStatus.completed).toList();
@@ -65,6 +65,14 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     _fs.addJob(job).catchError((e) {
       if (kDebugMode) debugPrint('addJob Firestore error: $e');
+    });
+  }
+
+  void updateJob(Job updated) {
+    _jobs = _jobs.map((j) => j.id == updated.id ? updated : j).toList();
+    notifyListeners();
+    _fs.updateJobFields(updated).catchError((e) {
+      if (kDebugMode) debugPrint('updateJob Firestore error: $e');
     });
   }
 
@@ -102,7 +110,7 @@ class AppState extends ChangeNotifier {
   }
 
   // ─── Content Posts ───────────────────────────────────────────────────────────
-  List<ContentPost> _posts = ContentPost.samplePosts;
+  List<ContentPost> _posts = [];
   List<ContentPost> get posts => _posts;
   List<ContentPost> get pendingPosts =>
       _posts.where((p) => p.status == ContentStatus.pending).toList();
@@ -249,7 +257,7 @@ class AppState extends ChangeNotifier {
   }
 
   // ─── Reviews ─────────────────────────────────────────────────────────────────
-  List<ReviewRequest> _reviews = List<ReviewRequest>.from(ReviewRequest.sampleReviews);
+  List<ReviewRequest> _reviews = [];
   List<ReviewRequest> get reviews => _reviews;
 
   // ─── SMS ──────────────────────────────────────────────────────────────────
@@ -362,7 +370,7 @@ class AppState extends ChangeNotifier {
   }
 
   // ─── Analytics ───────────────────────────────────────────────────────────────
-  AnalyticsSummary _analytics = AnalyticsSummary.sample;
+  AnalyticsSummary _analytics = AnalyticsSummary.empty;
   AnalyticsSummary get analytics => _analytics;
 
   // ─── Templates ───────────────────────────────────────────────────────────────
@@ -370,11 +378,11 @@ class AppState extends ChangeNotifier {
   List<ProjectTemplate> get templates => _templates;
 
   // ─── Team ────────────────────────────────────────────────────────────────────
-  List<TRUser> _team = TRUser.sampleTeam;
+  List<TRUser> _team = [];
   List<TRUser> get team => _team;
 
   // ─── Photo Submissions ───────────────────────────────────────────────────────
-  List<PhotoSubmission> _photoSubmissions = PhotoSubmission.samples;
+  List<PhotoSubmission> _photoSubmissions = [];
   List<PhotoSubmission> get photoSubmissions => _photoSubmissions;
 
   /// Pending submissions waiting for approval.
@@ -487,6 +495,36 @@ class AppState extends ChangeNotifier {
   bool _googleConnected = false;
   bool get googleConnected => _googleConnected;
 
+  void updateCompany({
+    required String name,
+    required String phone,
+    required String serviceArea,
+    String? website,
+  }) {
+    if (_company == null) return;
+    _company = Company(
+      id:              _company!.id,
+      name:            name,
+      logoUrl:         _company!.logoUrl,
+      tradeCategory:   _company!.tradeCategory,
+      serviceArea:     serviceArea,
+      phone:           phone,
+      website:         website,
+      teamSize:        _company!.teamSize,
+      googleConnected: _company!.googleConnected,
+      googleBusinessId: _company!.googleBusinessId,
+      googleReviewLink: _company!.googleReviewLink,
+      gbpLocationId:   _company!.gbpLocationId,
+      createdAt:       _company!.createdAt,
+    );
+    notifyListeners();
+    _fs.updateCompanyFields(
+      name: name, phone: phone, serviceArea: serviceArea, website: website,
+    ).catchError((e) {
+      if (kDebugMode) debugPrint('updateCompany Firestore error: $e');
+    });
+  }
+
   void connectGoogle() {
     _googleConnected = true;
     notifyListeners();
@@ -570,7 +608,7 @@ class AppState extends ChangeNotifier {
   }
 
   // ─── Subscription ─────────────────────────────────────────────────────────
-  ActiveSubscription _subscription = ActiveSubscription.demo;
+  ActiveSubscription _subscription = ActiveSubscription.none;
   ActiveSubscription get subscription => _subscription;
   PlanTier get currentTier => _subscription.tier;
   bool get isInTrial => _subscription.isInTrial;
@@ -619,12 +657,43 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Called after a successful Stripe payment sheet confirmation.
+  /// Updates local state optimistically and persists to Firestore so
+  /// the webhook also has a starting record to merge into.
+  void startTrialWithStripe(
+    PlanTier tier, {
+    String? stripeCustomerId,
+    String? stripeSubscriptionId,
+  }) {
+    final now = DateTime.now();
+    final trialEnd = now.add(const Duration(days: 14));
+    _subscription = ActiveSubscription(
+      tier: tier,
+      status: SubscriptionStatus.trial,
+      trialStartDate: now,
+      trialEndDate: trialEnd,
+      stripeCustomerId: stripeCustomerId,
+      stripeSubscriptionId: stripeSubscriptionId,
+    );
+    notifyListeners();
+
+    // Persist to Firestore (fire-and-forget — webhook will also update this)
+    _fs.saveSubscription(
+      tier: tier.name,
+      status: 'trial',
+      trialStartDate: now,
+      trialEndDate: trialEnd,
+      stripeCustomerId: stripeCustomerId,
+      stripeSubscriptionId: stripeSubscriptionId,
+    ).catchError((e) {
+      if (kDebugMode) debugPrint('[AppState] saveSubscription error: $e');
+    });
+  }
+
   // ─── Login ─────────────────────────────────────────────────────────────────
 
   /// Demo / preview mode login — skips real auth.
   Future<void> login() async {
-    _currentUser = TRUser.sample;
-    _company = Company.sample;
     _isLoggedIn = true;
     _onboardingComplete = true;
     notifyListeners();
@@ -665,8 +734,6 @@ class AppState extends ChangeNotifier {
   Future<void> completeOnboarding() async {
     _onboardingComplete = true;
     _isLoggedIn = true;
-    _currentUser = TRUser.sample;
-    _company = Company.sample;
     notifyListeners();
     await _initFirestoreStreams();
   }
@@ -681,13 +748,13 @@ class AppState extends ChangeNotifier {
     _company = null;
     _firestoreReady = false;
     // Reset to sample data
-    _jobs = Job.sampleJobs;
-    _posts = ContentPost.samplePosts;
-    _reviews = List<ReviewRequest>.from(ReviewRequest.sampleReviews);
-    _team = TRUser.sampleTeam;
+    _jobs = [];
+    _posts = [];
+    _reviews = [];
+    _team = [];
     _templates = ProjectTemplate.defaultTemplates;
-    _analytics = AnalyticsSummary.sample;
-    _photoSubmissions = PhotoSubmission.samples;
+    _analytics = AnalyticsSummary.empty;
+    _photoSubmissions = [];
     _smsLog.clear();
     notifyListeners();
   }
@@ -721,10 +788,12 @@ class AppState extends ChangeNotifier {
       });
       if (fsUser != null) _currentUser = fsUser;
 
-      // Load subscription from Firestore
+      // Load subscription from Firestore.
+      // Timeout/failure → ActiveSubscription.none so the trial gate shows
+      // and the user is prompted to pick a plan rather than getting free access.
       final fsSub = await _fs.getSubscription().timeout(fsTimeout, onTimeout: () {
-        if (kDebugMode) debugPrint('[AppState] getSubscription() timed out');
-        return ActiveSubscription.demo;
+        if (kDebugMode) debugPrint('[AppState] getSubscription() timed out — defaulting to none');
+        return ActiveSubscription.none;
       });
       _subscription = fsSub;
 
@@ -739,27 +808,28 @@ class AppState extends ChangeNotifier {
 
       // Subscribe to real-time streams
       _jobsSub = _fs.jobsStream().listen((jobs) {
-        if (jobs.isNotEmpty) _jobs = jobs;
+        _jobs = jobs;
         notifyListeners();
       }, onError: (e) {
         if (kDebugMode) debugPrint('Jobs stream error: $e');
       });
 
       _postsSub = _fs.postsStream().listen((posts) {
-        if (posts.isNotEmpty) _posts = posts;
+        _posts = posts;
         notifyListeners();
       }, onError: (e) {
         if (kDebugMode) debugPrint('Posts stream error: $e');
       });
 
-      _reviewsSub = _fs.reviewsStream().listen((_) {
+      _reviewsSub = _fs.reviewsStream().listen((reviews) {
+        _reviews = reviews;
         notifyListeners();
       }, onError: (e) {
         if (kDebugMode) debugPrint('Reviews stream error: $e');
       });
 
       _teamSub = _fs.teamStream().listen((team) {
-        if (team.isNotEmpty) _team = team;
+        _team = team;
         notifyListeners();
       }, onError: (e) {
         if (kDebugMode) debugPrint('Team stream error: $e');
@@ -776,14 +846,14 @@ class AppState extends ChangeNotifier {
       });
 
       _templatesSub = _fs.templatesStream().listen((templates) {
-        if (templates.isNotEmpty) _templates = templates;
+        _templates = templates.isNotEmpty ? templates : ProjectTemplate.defaultTemplates;
         notifyListeners();
       }, onError: (e) {
         if (kDebugMode) debugPrint('Templates stream error: $e');
       });
 
       _photoSubmissionsSub = _fs.photoSubmissionsStream().listen((subs) {
-        if (subs.isNotEmpty) _photoSubmissions = subs;
+        _photoSubmissions = subs;
         notifyListeners();
       }, onError: (e) {
         if (kDebugMode) debugPrint('PhotoSubmissions stream error: $e');

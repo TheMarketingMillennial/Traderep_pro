@@ -130,13 +130,32 @@ class SmsMessage {
 // ─────────────────────────────────────────────────────────────────────────────
 // SMS TEMPLATES
 // All message bodies are defined here. Edit text here to change what gets sent.
-// Variables: {customerName}, {jobType}, {companyName}, {reviewLink}
+// Fixed variables: {customerName}, {jobType}, {companyName}, {reviewLink}
+// Crew-editable variables: declared in SmsTemplateVariable list, shown as
+// inline fields in the SendSmsSheet before sending.
 // ─────────────────────────────────────────────────────────────────────────────
+
+// ─── Crew-editable variable definition ───────────────────────────────────────
+class SmsTemplateVariable {
+  final String key;           // placeholder in body, e.g. '{{eta}}'
+  final String label;         // shown above the field, e.g. 'Arrival Time'
+  final String hint;          // input hint, e.g. '20 minutes'
+  final List<String> quickOptions; // tap-to-fill chips; empty = freeform only
+
+  const SmsTemplateVariable({
+    required this.key,
+    required this.label,
+    required this.hint,
+    this.quickOptions = const [],
+  });
+}
+
 class SmsTemplate {
   final String key;
   final String label;
   final String description;
   final SmsType type;
+  final List<SmsTemplateVariable> variables; // crew-editable placeholders
   final String Function({
     required String customerName,
     required String jobType,
@@ -149,6 +168,7 @@ class SmsTemplate {
     required this.label,
     required this.description,
     required this.type,
+    this.variables = const [],
     required this.buildBody,
   });
 }
@@ -188,9 +208,17 @@ class SmsTemplates {
     label: 'Crew On the Way',
     description: 'Lets customer know the crew is heading to the job site',
     type: SmsType.statusUpdate,
+    variables: [
+      SmsTemplateVariable(
+        key: '{{eta}}',
+        label: 'Arrival Time',
+        hint: 'e.g. 20 minutes',
+        quickOptions: ['10 minutes', '15 minutes', '20 minutes', '30 minutes', '45 minutes', '1 hour'],
+      ),
+    ],
     buildBody: ({required customerName, required jobType, required companyName, reviewLink}) =>
       'Hi $customerName! Your $companyName crew is on their way to your property now. '
-      'Expected arrival in 30–45 minutes. Thank you for choosing us! 🚛',
+      'Expected arrival in {{eta}}. Thank you for choosing us! 🚛',
   );
 
   static final inProgress = SmsTemplate(

@@ -33,7 +33,7 @@ class PricingPlan {
   final List<PlanFeature> features;
   final bool isMostPopular;
   final Color accentColor;
-  final String stripeProductId; // placeholder for Stripe integration
+  final String stripePriceId; // live Stripe price ID
   final int maxUsers;
   final int maxLocations;
 
@@ -46,7 +46,7 @@ class PricingPlan {
     required this.features,
     required this.isMostPopular,
     required this.accentColor,
-    required this.stripeProductId,
+    required this.stripePriceId,
     required this.maxUsers,
     required this.maxLocations,
   });
@@ -62,7 +62,7 @@ class PricingPlan {
     bestFor: 'Solo contractors & small crews',
     isMostPopular: false,
     accentColor: TRColors.info,
-    stripeProductId: 'prod_starter_traderep',
+    stripePriceId: 'price_1TcTIkCnWFtpnJDSLagxlQCu',
     maxUsers: 3,
     maxLocations: 1,
     features: [
@@ -90,7 +90,7 @@ class PricingPlan {
     bestFor: 'Growing contractor teams',
     isMostPopular: true,
     accentColor: TRColors.gold,
-    stripeProductId: 'prod_growth_traderep',
+    stripePriceId: 'price_1TcTJXCnWFtpnJDSXlZpYOs9',
     maxUsers: 15,
     maxLocations: 1,
     features: [
@@ -118,7 +118,7 @@ class PricingPlan {
     bestFor: 'Larger contractors & multi-location companies',
     isMostPopular: false,
     accentColor: TRColors.statusLead,
-    stripeProductId: 'prod_pro_traderep',
+    stripePriceId: 'price_1TcTKICnWFtpnJDSmXw4CrWZ',
     maxUsers: 999,
     maxLocations: 999,
     features: [

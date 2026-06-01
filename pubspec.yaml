@@ -27,6 +27,9 @@ dependencies:
   firebase_storage: 12.3.2
   firebase_auth: 5.3.1
 
+  # Stripe payments
+  flutter_stripe: 11.1.0
+
   # Networking
   http: 1.5.0
 

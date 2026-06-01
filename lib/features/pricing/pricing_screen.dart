@@ -1,7 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_theme.dart';
 import '../../shared/services/app_state.dart';
+import '../../shared/services/stripe_service.dart';
 import '../../shared/widgets/tr_widgets.dart';
 import 'pricing_models.dart';
 
@@ -733,6 +735,17 @@ class _FAQTileState extends State<_FAQTile> {
 }
 
 // ─── Checkout Sheet ───────────────────────────────────────────────────────────
+//
+// Flow on MOBILE (Android/iOS):
+//   Step 0 = confirm order summary
+//   "Continue to Payment" → calls Railway /create-subscription → presents
+//   native Stripe payment sheet → on success, step 2 = success
+//
+// Flow on WEB (preview):
+//   Same step 0 confirm → "Continue to Payment" shows a brief loading
+//   indicator then moves straight to step 2 (Stripe SDK not available
+//   on web; actual billing happens on mobile APK).
+//
 class _CheckoutSheet extends StatefulWidget {
   final PricingPlan plan;
   final AppState state;
@@ -743,8 +756,9 @@ class _CheckoutSheet extends StatefulWidget {
 }
 
 class _CheckoutSheetState extends State<_CheckoutSheet> {
-  int _step = 0; // 0=confirm, 1=payment, 2=success
+  int _step = 0;   // 0=confirm, 2=success
   bool _loading = false;
+  String? _errorMessage;
 
   @override
   Widget build(BuildContext context) {
@@ -752,18 +766,21 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
         padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
-        child: _step == 2 ? _buildSuccess() : _step == 1 ? _buildPayment() : _buildConfirm(),
+        child: _step == 2 ? _buildSuccess() : _buildConfirm(),
       ),
     );
   }
 
+  // ── Step 0: Order summary ──────────────────────────────────────────────────
   Widget _buildConfirm() {
     final plan = widget.plan;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Center(child: Container(width: 40, height: 4,
-          decoration: BoxDecoration(color: TRColors.divider, borderRadius: BorderRadius.circular(2)))),
+        Center(child: Container(
+          width: 40, height: 4,
+          decoration: BoxDecoration(color: TRColors.divider, borderRadius: BorderRadius.circular(2)),
+        )),
         const SizedBox(height: 20),
         Row(children: [
           Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -789,7 +806,7 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
         _OrderLine(label: 'First charge', value: '\$${plan.monthlyPrice}.00', bold: true),
         _OrderLine(label: 'Billing', value: 'Monthly — Cancel anytime'),
         const SizedBox(height: 20),
-        // Stripe badge
+        // Stripe security badge
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           decoration: BoxDecoration(
@@ -809,62 +826,46 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
             )),
           ]),
         ),
+        // Error message
+        if (_errorMessage != null) ...[
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: TRColors.error.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: TRColors.error.withValues(alpha: 0.4)),
+            ),
+            child: Row(children: [
+              const Icon(Icons.error_outline_rounded, color: TRColors.error, size: 16),
+              const SizedBox(width: 8),
+              Expanded(child: Text(_errorMessage!, style: const TextStyle(
+                color: TRColors.error, fontSize: 12,
+              ))),
+            ]),
+          ),
+        ],
         const SizedBox(height: 20),
-        GoldButton(
-          label: 'Continue to Payment',
-          icon: Icons.credit_card_rounded,
-          onTap: () => setState(() => _step = 1),
-        ),
+        _loading
+          ? const SizedBox(
+              height: 54,
+              child: Center(child: CircularProgressIndicator(color: TRColors.gold)),
+            )
+          : GoldButton(
+              label: 'Continue to Payment',
+              icon: Icons.credit_card_rounded,
+              onTap: _processPayment,
+            ),
         const SizedBox(height: 10),
         TextButton(
-          onPressed: () => Navigator.pop(context),
+          onPressed: _loading ? null : () => Navigator.pop(context),
           child: const Text('Cancel', style: TextStyle(color: TRColors.grayMid)),
         ),
       ],
     );
   }
 
-  Widget _buildPayment() {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Center(child: Container(width: 40, height: 4,
-          decoration: BoxDecoration(color: TRColors.divider, borderRadius: BorderRadius.circular(2)))),
-        const SizedBox(height: 20),
-        const Text('Payment Details', style: TextStyle(
-          color: TRColors.white, fontSize: 20, fontWeight: FontWeight.w800,
-        )),
-        const SizedBox(height: 4),
-        const Text('Powered by Stripe — Your card is never stored by TradeRep.',
-          style: TextStyle(color: TRColors.grayMid, fontSize: 12)),
-        const SizedBox(height: 20),
-        _PaymentField(label: 'Card Number', hint: '1234 5678 9012 3456', icon: Icons.credit_card_rounded),
-        const SizedBox(height: 12),
-        Row(children: const [
-          Expanded(child: _PaymentField(label: 'Expiry', hint: 'MM / YY', icon: Icons.date_range_rounded)),
-          SizedBox(width: 12),
-          Expanded(child: _PaymentField(label: 'CVC', hint: '•••', icon: Icons.security_rounded)),
-        ]),
-        const SizedBox(height: 12),
-        _PaymentField(label: 'Name on Card', hint: 'John Smith', icon: Icons.person_rounded),
-        const SizedBox(height: 20),
-        _loading
-          ? const SizedBox(height: 54, child: Center(child: CircularProgressIndicator(color: TRColors.gold)))
-          : GoldButton(
-              label: 'Start Free Trial',
-              icon: Icons.rocket_launch_rounded,
-              onTap: _processPayment,
-            ),
-        const SizedBox(height: 10),
-        TextButton(
-          onPressed: () => setState(() => _step = 0),
-          child: const Text('← Back', style: TextStyle(color: TRColors.grayMid)),
-        ),
-      ],
-    );
-  }
-
+  // ── Step 2: Success ────────────────────────────────────────────────────────
   Widget _buildSuccess() {
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -880,7 +881,7 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
           child: const Icon(Icons.check_rounded, color: TRColors.success, size: 44),
         ),
         const SizedBox(height: 20),
-        Text('You\'re on ${widget.plan.name}!', style: const TextStyle(
+        Text("You're on ${widget.plan.name}!", style: const TextStyle(
           color: TRColors.white, fontSize: 22, fontWeight: FontWeight.w800,
         )),
         const SizedBox(height: 8),
@@ -900,11 +901,44 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
     );
   }
 
-  void _processPayment() async {
-    setState(() => _loading = true);
-    await Future.delayed(const Duration(seconds: 2));
-    widget.state.startTrial(widget.plan.tier);
-    setState(() { _loading = false; _step = 2; });
+  // ── Payment handler ────────────────────────────────────────────────────────
+  Future<void> _processPayment() async {
+    setState(() { _loading = true; _errorMessage = null; });
+
+    // On web (preview) Stripe SDK is unavailable — skip straight to success
+    if (kIsWeb) {
+      await Future.delayed(const Duration(milliseconds: 800));
+      widget.state.startTrial(widget.plan.tier);
+      if (mounted) setState(() { _loading = false; _step = 2; });
+      return;
+    }
+
+    // Mobile: real Stripe payment sheet
+    final user  = widget.state.currentUser;
+    final email = user?.email ?? '';
+    final name  = user?.name  ?? '';
+
+    final result = await StripeService.startTrialSubscription(
+      email: email,
+      name:  name,
+      plan:  widget.plan,
+    );
+
+    if (!mounted) return;
+
+    if (result.success) {
+      widget.state.startTrialWithStripe(
+        widget.plan.tier,
+        stripeCustomerId:     result.customerId,
+        stripeSubscriptionId: result.subscriptionId,
+      );
+      setState(() { _loading = false; _step = 2; });
+    } else {
+      setState(() {
+        _loading = false;
+        _errorMessage = result.error ?? 'Payment failed. Please try again.';
+      });
+    }
   }
 
   String _trialEndDate() {
@@ -913,6 +947,7 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
     return '${months[end.month-1]} ${end.day}, ${end.year}';
   }
 }
+
 
 class _OrderLine extends StatelessWidget {
   final String label;
@@ -934,40 +969,6 @@ class _OrderLine extends StatelessWidget {
           fontWeight: bold ? FontWeight.w700 : FontWeight.w500,
         )),
       ]),
-    );
-  }
-}
-
-class _PaymentField extends StatelessWidget {
-  final String label;
-  final String hint;
-  final IconData icon;
-
-  const _PaymentField({required this.label, required this.hint, required this.icon});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: const TextStyle(
-          color: TRColors.grayLight, fontSize: 12, fontWeight: FontWeight.w600,
-        )),
-        const SizedBox(height: 6),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-          decoration: BoxDecoration(
-            color: TRColors.cardMid,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: TRColors.divider),
-          ),
-          child: Row(children: [
-            Icon(icon, color: TRColors.grayMid, size: 16),
-            const SizedBox(width: 10),
-            Text(hint, style: const TextStyle(color: TRColors.grayMid, fontSize: 14)),
-          ]),
-        ),
-      ],
     );
   }
 }

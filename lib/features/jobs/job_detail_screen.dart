@@ -6,6 +6,8 @@ import '../../shared/widgets/tr_widgets.dart';
 import '../../shared/models/models.dart';
 import '../../shared/models/sms_models.dart';
 import '../sms/sms_widgets.dart';
+import '../photos/photo_submission_widgets.dart';
+import 'edit_job_screen.dart';
 
 class JobDetailScreen extends StatelessWidget {
   final Job job;
@@ -213,7 +215,7 @@ class JobDetailScreen extends StatelessWidget {
               )),
               const Spacer(),
               GestureDetector(
-                onTap: () {},
+                onTap: () => showSubmitPhotosSheet(context, preselectedJob: job),
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
@@ -294,6 +296,26 @@ class JobDetailScreen extends StatelessWidget {
       orElse: () => state.templates.first,
     );
 
+    // Build a set of PhotoTypes that have been submitted for this job
+    // across all submissions (any status — pending, approved, rejected).
+    final submittedTypes = state.photoSubmissions
+        .where((s) => s.jobId == job.id)
+        .expand((s) => s.photos)
+        .map((p) => p.type)
+        .toSet();
+
+    // Count per type for the summary badge
+    final typeCounts = <PhotoType, int>{};
+    for (final s in state.photoSubmissions.where((s) => s.jobId == job.id)) {
+      for (final p in s.photos) {
+        typeCounts[p.type] = (typeCounts[p.type] ?? 0) + 1;
+      }
+    }
+
+    final completedCount = template.shots
+        .where((shot) => submittedTypes.contains(shot.phase))
+        .length;
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -310,66 +332,118 @@ class JobDetailScreen extends StatelessWidget {
                 color: TRColors.white, fontSize: 15, fontWeight: FontWeight.w700,
               )),
               const Spacer(),
-              Text(template.name, style: const TextStyle(
-                color: TRColors.grayLight, fontSize: 12,
-              )),
+              // Progress count badge
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: completedCount == template.shots.length
+                      ? TRColors.success.withValues(alpha: 0.15)
+                      : TRColors.cardMid,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: completedCount == template.shots.length
+                        ? TRColors.success.withValues(alpha: 0.4)
+                        : TRColors.divider,
+                  ),
+                ),
+                child: Text(
+                  '$completedCount / ${template.shots.length}',
+                  style: TextStyle(
+                    color: completedCount == template.shots.length
+                        ? TRColors.success
+                        : TRColors.grayLight,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 12),
           ...template.shots.map((shot) {
-            // ignore: dead_code
-            const isComplete = false; // placeholder — wire to uploaded photos set
+            final isComplete = submittedTypes.contains(shot.phase);
+            final count = typeCounts[shot.phase] ?? 0;
             return Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: Row(
                 children: [
-                  Container(
+                  // Tick circle
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 250),
                     width: 22, height: 22,
                     decoration: BoxDecoration(
-                      // ignore: dead_code
-                      color: isComplete ? TRColors.success.withValues(alpha: 0.2) : TRColors.cardMid,
+                      color: isComplete
+                          ? TRColors.success.withValues(alpha: 0.2)
+                          : TRColors.cardMid,
                       shape: BoxShape.circle,
                       border: Border.all(
-                        // ignore: dead_code
                         color: isComplete ? TRColors.success : TRColors.divider,
                       ),
                     ),
                     child: isComplete
-                      // ignore: dead_code
-                      ? const Icon(Icons.check_rounded, color: TRColors.success, size: 12)
-                      : null,
+                        ? const Icon(Icons.check_rounded, color: TRColors.success, size: 12)
+                        : null,
                   ),
                   const SizedBox(width: 10),
                   Expanded(child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(shot.name, style: const TextStyle(
-                        color: TRColors.white, fontSize: 13, fontWeight: FontWeight.w600,
+                      Text(shot.name, style: TextStyle(
+                        color: isComplete ? TRColors.white : TRColors.grayLight,
+                        fontSize: 13,
+                        fontWeight: isComplete ? FontWeight.w700 : FontWeight.w500,
                       )),
                       Text(shot.instruction, style: const TextStyle(
                         color: TRColors.grayMid, fontSize: 11,
                       )),
                     ],
                   )),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: _phaseColor(shot.phase).withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(5),
-                    ),
-                    child: Text(
-                      shot.phase.name.toUpperCase(),
-                      style: TextStyle(
-                        color: _phaseColor(shot.phase),
-                        fontSize: 9,
-                        fontWeight: FontWeight.w700,
+                  const SizedBox(width: 8),
+                  // Phase tag + photo count if submitted
+                  Row(children: [
+                    if (isComplete && count > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 5),
+                        child: Text(
+                          '$count photo${count == 1 ? '' : 's'}',
+                          style: const TextStyle(color: TRColors.success, fontSize: 10),
+                        ),
+                      ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: _phaseColor(shot.phase).withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(5),
+                      ),
+                      child: Text(
+                        shot.phase.name.toUpperCase(),
+                        style: TextStyle(
+                          color: _phaseColor(shot.phase),
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
-                  ),
+                  ]),
                 ],
               ),
             );
           }),
+          // Tap-to-add nudge when checklist is incomplete
+          if (completedCount < template.shots.length) ...[
+            const SizedBox(height: 8),
+            GestureDetector(
+              onTap: () => showSubmitPhotosSheet(context, preselectedJob: job),
+              child: Row(children: [
+                const Icon(Icons.add_a_photo_outlined, color: TRColors.gold, size: 14),
+                const SizedBox(width: 6),
+                Text(
+                  '${template.shots.length - completedCount} shot${template.shots.length - completedCount == 1 ? '' : 's'} still needed — tap to add photos',
+                  style: const TextStyle(color: TRColors.gold, fontSize: 12, fontWeight: FontWeight.w600),
+                ),
+              ]),
+            ),
+          ],
         ],
       ),
     );
@@ -580,7 +654,7 @@ class JobDetailScreen extends StatelessWidget {
               border: Border.all(color: TRColors.divider),
             ),
             child: IconButton(
-              onPressed: () {},
+              onPressed: () => showSubmitPhotosSheet(context, preselectedJob: job),
               icon: const Icon(Icons.camera_alt_rounded, color: TRColors.gold, size: 22),
             ),
           ),
@@ -661,7 +735,12 @@ class JobDetailScreen extends StatelessWidget {
               color: TRColors.divider, borderRadius: BorderRadius.circular(2),
             )),
             const SizedBox(height: 20),
-            _ActionTile(icon: Icons.edit_rounded, label: 'Edit Job Details', onTap: () => Navigator.pop(context)),
+            _ActionTile(icon: Icons.edit_rounded, label: 'Edit Job Details', onTap: () {
+              Navigator.pop(context);
+              Navigator.push(context, MaterialPageRoute(
+                builder: (_) => EditJobScreen(job: job),
+              ));
+            }),
             _ActionTile(icon: Icons.person_add_rounded, label: 'Assign Crew', onTap: () => Navigator.pop(context)),
             _ActionTile(icon: Icons.share_rounded, label: 'Share Job Link', onTap: () => Navigator.pop(context)),
             _ActionTile(icon: Icons.delete_outline_rounded, label: 'Archive Job', color: TRColors.error, onTap: () => Navigator.pop(context)),

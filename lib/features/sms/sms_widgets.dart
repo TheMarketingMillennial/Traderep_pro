@@ -47,25 +47,68 @@ class _SendSmsSheetState extends State<SendSmsSheet> {
   String? _phoneError;
   bool _sending = false;
 
+  // Crew-editable variable values: key → current value
+  final Map<String, String> _variableValues = {};
+  // Controllers for each variable's freeform text field
+  final Map<String, TextEditingController> _varControllers = {};
+
   @override
   void initState() {
     super.initState();
     _phoneCtrl = TextEditingController(text: widget.customerPhone);
     _selectedTemplate = widget.templates.first;
+    _initVariableControllers();
+  }
+
+  void _initVariableControllers() {
+    // Dispose old controllers
+    for (final c in _varControllers.values) {
+      c.dispose();
+    }
+    _varControllers.clear();
+    _variableValues.clear();
+    // Create a controller + default empty value for each variable
+    for (final v in _selectedTemplate.variables) {
+      _variableValues[v.key] = '';
+      final ctrl = TextEditingController();
+      ctrl.addListener(() {
+        setState(() => _variableValues[v.key] = ctrl.text);
+      });
+      _varControllers[v.key] = ctrl;
+    }
   }
 
   @override
   void dispose() {
     _phoneCtrl.dispose();
+    for (final c in _varControllers.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
-  String get _messagePreview => _selectedTemplate.buildBody(
-    customerName: widget.customerName,
-    jobType: widget.jobType,
-    companyName: widget.companyName,
-    reviewLink: widget.reviewLink,
+  // Resolves {{placeholders}} with crew-entered values
+  String _resolveBody(String raw) {
+    var result = raw;
+    for (final entry in _variableValues.entries) {
+      final value = entry.value.trim().isEmpty ? entry.key : entry.value.trim();
+      result = result.replaceAll(entry.key, value);
+    }
+    return result;
+  }
+
+  String get _messagePreview => _resolveBody(
+    _selectedTemplate.buildBody(
+      customerName: widget.customerName,
+      jobType: widget.jobType,
+      companyName: widget.companyName,
+      reviewLink: widget.reviewLink,
+    ),
   );
+
+  // Returns true if all required variables have a value
+  bool get _variablesFilled =>
+    _selectedTemplate.variables.every((v) => _variableValues[v.key]?.isNotEmpty == true);
 
   void _validatePhone(String value) {
     setState(() {
@@ -77,10 +120,38 @@ class _SendSmsSheetState extends State<SendSmsSheet> {
     _validatePhone(_phoneCtrl.text);
     if (_phoneError != null) return;
 
+    // Block send if crew hasn't filled required variable fields
+    if (!_variablesFilled) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Please fill in all required fields before sending.'),
+        backgroundColor: TRColors.warning,
+        duration: Duration(seconds: 3),
+      ));
+      return;
+    }
+
     setState(() => _sending = true);
 
     final state = context.read<AppState>();
     SmsResult result;
+
+    // Build a resolved template that substitutes crew variables into the body
+    final resolvedTemplate = _selectedTemplate.variables.isEmpty
+        ? _selectedTemplate
+        : SmsTemplate(
+            key: _selectedTemplate.key,
+            label: _selectedTemplate.label,
+            description: _selectedTemplate.description,
+            type: _selectedTemplate.type,
+            buildBody: ({required customerName, required jobType,
+                required companyName, reviewLink}) =>
+              _resolveBody(_selectedTemplate.buildBody(
+                customerName: customerName,
+                jobType: jobType,
+                companyName: companyName,
+                reviewLink: reviewLink,
+              )),
+          );
 
     if (_selectedTemplate.type == SmsType.reviewRequest) {
       result = await state.sendReviewSms(
@@ -98,7 +169,7 @@ class _SendSmsSheetState extends State<SendSmsSheet> {
         toPhone: _phoneCtrl.text,
         jobType: widget.jobType,
         companyName: widget.companyName,
-        template: _selectedTemplate,
+        template: resolvedTemplate,
       );
     }
 
@@ -237,8 +308,29 @@ class _SendSmsSheetState extends State<SendSmsSheet> {
               ...widget.templates.map((t) => _TemplateTile(
                 template: t,
                 selected: _selectedTemplate.key == t.key,
-                onTap: () => setState(() => _selectedTemplate = t),
+                onTap: () => setState(() {
+                  _selectedTemplate = t;
+                  _initVariableControllers();
+                }),
               )),
+              const SizedBox(height: 16),
+            ],
+
+            // ── Crew Variable Fields ─────────────────────────────────────────
+            if (_selectedTemplate.variables.isNotEmpty) ...[
+              ..._selectedTemplate.variables.map((variable) =>
+                _VariableField(
+                  variable: variable,
+                  currentValue: _variableValues[variable.key] ?? '',
+                  controller: _varControllers[variable.key]!,
+                  onQuickSelect: (val) {
+                    setState(() {
+                      _variableValues[variable.key] = val;
+                      _varControllers[variable.key]!.text = val;
+                    });
+                  },
+                ),
+              ),
               const SizedBox(height: 16),
             ],
 
@@ -286,7 +378,7 @@ class _SendSmsSheetState extends State<SendSmsSheet> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: _sending ? null : _send,
+                onPressed: (_sending || !_variablesFilled) ? null : _send,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: TRColors.gold,
                   disabledBackgroundColor: TRColors.gold.withValues(alpha: 0.5),
@@ -382,6 +474,118 @@ class _TemplateTile extends StatelessWidget {
             const Icon(Icons.check_circle_rounded, color: TRColors.gold, size: 18),
         ]),
       ),
+    );
+  }
+}
+
+// ─── Variable Field ───────────────────────────────────────────────────────────
+// Rendered for each SmsTemplateVariable on the selected template.
+// Shows quick-select chips on top, freeform text field below.
+class _VariableField extends StatelessWidget {
+  final SmsTemplateVariable variable;
+  final String currentValue;
+  final TextEditingController controller;
+  final ValueChanged<String> onQuickSelect;
+
+  const _VariableField({
+    required this.variable,
+    required this.currentValue,
+    required this.controller,
+    required this.onQuickSelect,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(children: [
+          Text(variable.label, style: const TextStyle(
+            color: TRColors.grayLight, fontSize: 12, fontWeight: FontWeight.w600,
+          )),
+          const SizedBox(width: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: TRColors.gold.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: const Text('Required', style: TextStyle(
+              color: TRColors.gold, fontSize: 9, fontWeight: FontWeight.w700,
+            )),
+          ),
+        ]),
+        const SizedBox(height: 8),
+
+        // Quick-select chips
+        if (variable.quickOptions.isNotEmpty) ...[
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: variable.quickOptions.map((opt) {
+              final selected = currentValue == opt;
+              return GestureDetector(
+                onTap: () => onQuickSelect(opt),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: selected ? TRColors.gold.withValues(alpha: 0.2) : TRColors.cardMid,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: selected ? TRColors.gold : TRColors.divider,
+                      width: selected ? 1.5 : 1,
+                    ),
+                  ),
+                  child: Text(opt, style: TextStyle(
+                    color: selected ? TRColors.gold : TRColors.grayLight,
+                    fontSize: 12,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                  )),
+                ),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 10),
+          const Row(children: [
+            Expanded(child: Divider(color: TRColors.divider)),
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 8),
+              child: Text('or type your own', style: TextStyle(
+                color: TRColors.grayMid, fontSize: 11,
+              )),
+            ),
+            Expanded(child: Divider(color: TRColors.divider)),
+          ]),
+          const SizedBox(height: 10),
+        ],
+
+        // Freeform text input
+        TextField(
+          controller: controller,
+          style: const TextStyle(color: TRColors.white, fontSize: 14),
+          decoration: InputDecoration(
+            hintText: variable.hint,
+            hintStyle: TextStyle(color: TRColors.grayMid.withValues(alpha: 0.6)),
+            prefixIcon: const Icon(Icons.edit_rounded, color: TRColors.grayMid, size: 16),
+            filled: true,
+            fillColor: TRColors.cardMid,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: TRColors.gold, width: 1.5),
+            ),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'This will replace "${variable.key}" in the message',
+          style: const TextStyle(color: TRColors.grayMid, fontSize: 11),
+        ),
+      ],
     );
   }
 }

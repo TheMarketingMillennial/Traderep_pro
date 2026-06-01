@@ -54,10 +54,17 @@ class AppConfig {
 
   // ── Server URLs ───────────────────────────────────────────────────────────
   static const String smsServerUrl = String.fromEnvironment(
-    'SMS_SERVER_URL', defaultValue: 'http://localhost:5061',
+    'SMS_SERVER_URL', defaultValue: 'https://web-production-548f4.up.railway.app',
   );
   static const String gbpServerUrl = String.fromEnvironment(
-    'GBP_SERVER_URL', defaultValue: 'http://localhost:5061',
+    'GBP_SERVER_URL', defaultValue: 'https://web-production-548f4.up.railway.app',
+  );
+  static const String stripeServerUrl = String.fromEnvironment(
+    'STRIPE_SERVER_URL', defaultValue: 'https://web-production-548f4.up.railway.app',
+  );
+  static const String stripePublishableKey = String.fromEnvironment(
+    'STRIPE_PUBLISHABLE_KEY',
+    defaultValue: 'pk_live_UBpghiWEYoROk4vQ98a9mu37',
   );
 
   // ── Firebase Configured Check ─────────────────────────────────────────────

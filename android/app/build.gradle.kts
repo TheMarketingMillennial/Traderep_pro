@@ -42,7 +42,7 @@ android {
 
     defaultConfig {
         applicationId  = "com.tradereppro.rep"
-        minSdk         = flutter.minSdkVersion
+        minSdk         = 21 // Stripe requires minSdk 21
         targetSdk      = flutter.targetSdkVersion
         // ── Version — bump these for each Play Store release ─────────────────
         // versionCode: integer, must increment with every upload to Play Store

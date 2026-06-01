@@ -7,7 +7,6 @@ import '../../core/theme/app_theme.dart';
 import '../../shared/services/app_state.dart';
 import '../../shared/services/auth_service.dart';
 import '../../shared/widgets/tr_widgets.dart';
-import '../../core/config/app_config.dart';
 
 class SignUpScreen extends StatefulWidget {
   const SignUpScreen({super.key});
@@ -62,7 +61,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
       return;
     }
     setState(() { _loading = true; _error = null; });
-    debugPrint('[SignUpScreen] Firebase configured: ${AppConfig.isFirebaseConfigured}');
     debugPrint('[SignUpScreen] Calling AuthService.signUp...');
 
     final result = await AuthService.instance.signUp(
@@ -143,9 +141,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
                 ),
                 const SizedBox(height: 28),
 
-                // Demo banner
-                if (!AppConfig.isFirebaseConfigured) _DemoBanner(),
-
                 // ── Section: About You ──────────────────────────────────────
                 _sectionLabel('About You'),
                 const SizedBox(height: 10),
@@ -170,7 +165,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   action: TextInputAction.next,
                   validator: (v) {
                     if (v == null || v.trim().isEmpty) return 'Email is required';
-                    if (!v.contains('@')) return 'Enter a valid email';
+                    final emailRegex = RegExp(r'^[\w.+\-]+@[a-zA-Z0-9\-]+\.[a-zA-Z]{2,}$');
+                    if (!emailRegex.hasMatch(v.trim())) return 'Enter a valid email address';
                     return null;
                   },
                 ),
@@ -232,7 +228,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   obscureText: _obscurePass,
                   textInputAction: TextInputAction.next,
                   style: const TextStyle(color: TRColors.white),
-                  decoration: _inputDecoration('Min. 6 characters', Icons.lock_outline).copyWith(
+                  decoration: _inputDecoration('Min. 8 chars, 1 uppercase, 1 number', Icons.lock_outline).copyWith(
                     suffixIcon: IconButton(
                       icon: Icon(
                         _obscurePass ? Icons.visibility_outlined : Icons.visibility_off_outlined,
@@ -243,7 +239,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   ),
                   validator: (v) {
                     if (v == null || v.isEmpty) return 'Password is required';
-                    if (v.length < 6) return 'Password must be at least 6 characters';
+                    if (v.length < 8) return 'Password must be at least 8 characters';
+                    if (!RegExp(r'[A-Z]').hasMatch(v)) return 'Include at least one uppercase letter';
+                    if (!RegExp(r'[0-9]').hasMatch(v)) return 'Include at least one number';
                     return null;
                   },
                 ),
@@ -376,31 +374,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
 }
 
 // ─── Shared widgets (imported by sign_in_screen.dart too) ────────────────────
-
-class _DemoBanner extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 20),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: TRColors.goldDim,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: TRColors.gold.withValues(alpha: 0.3)),
-      ),
-      child: const Row(children: [
-        Icon(Icons.info_outline_rounded, color: TRColors.gold, size: 16),
-        SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            'Preview mode — any credentials will sign you in.',
-            style: TextStyle(color: TRColors.gold, fontSize: 12),
-          ),
-        ),
-      ]),
-    );
-  }
-}
 
 class _ErrorBox extends StatelessWidget {
   final String message;
