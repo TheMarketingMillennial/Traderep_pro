@@ -71,9 +71,10 @@ Future<void> _initFirebase() async {
     AppConfig.markFirebaseInitialized();
     debugPrint('[Firebase] Initialized ✅ (apps: ${Firebase.apps.length})');
   } on TimeoutException catch (e) {
-    debugPrint('[Firebase] Init timeout: $e — running in demo mode');
+    debugPrint('[Firebase] ⚠️ Init TIMEOUT: $e');
   } catch (e) {
-    debugPrint('[Firebase] Init error: $e — running in demo mode');
+    debugPrint('[Firebase] ⚠️ Init ERROR: $e');
+    debugPrint('[Firebase] ⚠️ Error type: ${e.runtimeType}');
   }
 }
 

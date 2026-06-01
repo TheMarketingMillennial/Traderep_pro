@@ -4,6 +4,7 @@
 
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import '../../core/config/app_config.dart';
@@ -37,7 +38,24 @@ class AuthService {
   FirebaseFirestore get _db => FirebaseFirestore.instance;
 
   /// Whether Firebase Auth is actually usable right now.
-  bool get isAvailable => AppConfig.isFirebaseConfigured;
+  /// Checks both AppConfig flag AND Firebase.apps directly as a safety net.
+  bool get isAvailable {
+    if (AppConfig.isFirebaseConfigured) return true;
+    // Extra safety: try reading Firebase.apps directly
+    try {
+      final apps = Firebase.apps;
+      if (apps.isNotEmpty) {
+        debugPrint('[AuthService] Firebase.apps=${apps.length} — marking configured');
+        AppConfig.markFirebaseInitialized();
+        return true;
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  static int _tryGetAppsLength() {
+    try { return Firebase.apps.length; } catch (_) { return -1; }
+  }
 
   User? get currentUser => isAvailable ? _auth.currentUser : null;
 
@@ -56,8 +74,9 @@ class AuthService {
 
     if (!isAvailable) {
       debugPrint('[AuthService] Firebase not configured — blocking sign-in');
+      debugPrint('[AuthService] Firebase.apps.length = ${_tryGetAppsLength()}');
       return AuthResult.fail(
-        'Authentication is not configured. Please contact support.',
+        'Firebase did not initialize. Check your internet connection and reload the app.',
       );
     }
 
@@ -106,8 +125,9 @@ class AuthService {
 
     if (!isAvailable) {
       debugPrint('[AuthService] Firebase not configured — blocking sign-up');
+      debugPrint('[AuthService] Firebase.apps.length = ${_tryGetAppsLength()}');
       return AuthResult.fail(
-        'Account creation is not available. Please contact support.',
+        'Firebase did not initialize. Check your internet connection and reload the app.',
       );
     }
 
