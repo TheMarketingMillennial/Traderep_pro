@@ -89,15 +89,13 @@ class AppConfig {
   }
 
   /// True if Firebase was successfully initialized at startup.
-  /// Works for both Android (google-services.json) and Web (--dart-define).
+  /// Works for both Android (google-services.json) and Web (embedded config).
   static bool get isFirebaseConfigured {
     // Primary check: was initializeApp() called successfully?
     if (_firebaseInitialized) return true;
-    // Secondary check: Firebase.apps is non-empty (Android native init)
+    // Secondary check: Firebase.apps is non-empty (covers Android native init)
     if (Firebase.apps.isNotEmpty) return true;
-    // Web fallback: check --dart-define keys
-    if (!kIsWeb) return false;
-    return firebaseApiKey.isNotEmpty && firebaseProjectId.isNotEmpty;
+    return false;
   }
 
   static List<String> get missingKeys {

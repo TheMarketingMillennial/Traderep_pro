@@ -58,35 +58,16 @@ Future<void> main() async {
 }
 
 Future<void> _initFirebase() async {
-  // ── Android / iOS: always attempt init (google-services.json handles creds)
-  // ── Web: only attempt init if --dart-define keys are present
-  final shouldInit = !kIsWeb || AppConfig.firebaseApiKey.isNotEmpty;
-
-  if (!shouldInit) {
-    debugPrint('[Firebase] No web credentials — running in demo mode');
-    return;
-  }
-
+  // Firebase config is now embedded in firebase_options.dart for all platforms.
+  // Always attempt initialization — no --dart-define flags needed.
   try {
     debugPrint('[Firebase] Initializing...');
-    if (kIsWeb) {
-      // Web needs explicit options from --dart-define
-      await Firebase.initializeApp(
-        options: DefaultFirebaseOptions.currentPlatform,
-      ).timeout(
-        const Duration(seconds: 10),
-        onTimeout: () => throw TimeoutException('Firebase init timed out'),
-      );
-    } else {
-      // Android/iOS: google-services.json / GoogleService-Info.plist
-      // DefaultFirebaseOptions reads from the bundled JSON automatically
-      await Firebase.initializeApp(
-        options: DefaultFirebaseOptions.currentPlatform,
-      ).timeout(
-        const Duration(seconds: 10),
-        onTimeout: () => throw TimeoutException('Firebase init timed out'),
-      );
-    }
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    ).timeout(
+      const Duration(seconds: 10),
+      onTimeout: () => throw TimeoutException('Firebase init timed out'),
+    );
     AppConfig.markFirebaseInitialized();
     debugPrint('[Firebase] Initialized ✅ (apps: ${Firebase.apps.length})');
   } on TimeoutException catch (e) {
