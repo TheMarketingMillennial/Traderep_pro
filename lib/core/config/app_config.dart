@@ -56,18 +56,18 @@ class AppConfig {
   // All three server URLs point to the same Railway instance — split into
   // separate dart-defines so they can be overridden independently if needed.
   static const String aiServerUrl = String.fromEnvironment(
-    'AI_SERVER_URL', defaultValue: 'https://web-production-548f4.up.railway.app',
+    'AI_SERVER_URL', defaultValue: 'https://traderep-server-production.up.railway.app',
   );
 
   // ── Server URLs ───────────────────────────────────────────────────────────
   static const String smsServerUrl = String.fromEnvironment(
-    'SMS_SERVER_URL', defaultValue: 'https://web-production-548f4.up.railway.app',
+    'SMS_SERVER_URL', defaultValue: 'https://traderep-server-production.up.railway.app',
   );
   static const String gbpServerUrl = String.fromEnvironment(
-    'GBP_SERVER_URL', defaultValue: 'https://web-production-548f4.up.railway.app',
+    'GBP_SERVER_URL', defaultValue: 'https://traderep-server-production.up.railway.app',
   );
   static const String stripeServerUrl = String.fromEnvironment(
-    'STRIPE_SERVER_URL', defaultValue: 'https://web-production-548f4.up.railway.app',
+    'STRIPE_SERVER_URL', defaultValue: 'https://traderep-server-production.up.railway.app',
   );
   static const String stripePublishableKey = String.fromEnvironment(
     'STRIPE_PUBLISHABLE_KEY',
