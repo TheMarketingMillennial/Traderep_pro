@@ -631,7 +631,7 @@ app.post('/publish-google-post', async (req, res) => {
     }
 
     // Post to Google Business Profile API
-    const fetch = (await import('node-fetch')).default;
+    // Native fetch — available in Node 18+ (no node-fetch dependency needed)
     const body = {
       languageCode: 'en-US',
       summary: text,
