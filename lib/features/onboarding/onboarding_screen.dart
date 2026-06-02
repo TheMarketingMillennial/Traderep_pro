@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_theme.dart';
 import '../../shared/services/app_state.dart';
@@ -514,11 +515,21 @@ class _GoogleConnectPageState extends State<_GoogleConnectPage> {
   bool _connecting = false;
   bool _connected = false;
 
-  void _connectGoogle() async {
-    setState(() => _connecting = true);
-    await Future.delayed(const Duration(seconds: 2));
-    context.read<AppState>().connectGoogle();
-    setState(() { _connecting = false; _connected = true; });
+  void _connectGoogle() {
+    // Show the GBP setup sheet — user enters their Location ID
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: TRColors.cardDark,
+      isScrollControlled: true,
+      useSafeArea: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => _GbpOnboardSheet(
+        state: context.read<AppState>(),
+        onConnected: () => setState(() => _connected = true),
+      ),
+    );
   }
 
   @override
@@ -695,6 +706,94 @@ class _ReadyItem extends StatelessWidget {
             ],
           )),
           const Icon(Icons.arrow_forward_ios_rounded, color: TRColors.grayMid, size: 14),
+        ],
+      ),
+    );
+  }
+}
+
+
+// ─── GBP Onboarding Sheet ─────────────────────────────────────────────────────
+class _GbpOnboardSheet extends StatefulWidget {
+  final AppState state;
+  final VoidCallback onConnected;
+  const _GbpOnboardSheet({required this.state, required this.onConnected});
+
+  @override
+  State<_GbpOnboardSheet> createState() => _GbpOnboardSheetState();
+}
+
+class _GbpOnboardSheetState extends State<_GbpOnboardSheet> {
+  final _ctrl = TextEditingController();
+  bool _saving = false;
+
+  @override
+  void dispose() { _ctrl.dispose(); super.dispose(); }
+
+  Future<void> _save() async {
+    final id = _ctrl.text.trim();
+    if (id.isEmpty) return;
+    setState(() => _saving = true);
+    await widget.state.updateGbpLocationId(id);
+    widget.state.connectGoogle();
+    widget.onConnected();
+    if (mounted) Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 24, right: 24, top: 20,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 32,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Center(child: Container(width: 40, height: 4,
+            decoration: BoxDecoration(color: TRColors.divider, borderRadius: BorderRadius.circular(2)))),
+          const SizedBox(height: 16),
+          const Text('Enter Your GBP Location ID',
+            style: TextStyle(color: TRColors.white, fontSize: 18, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 8),
+          const Text('Find it in Google Business Profile → Settings → Advanced settings',
+            style: TextStyle(color: TRColors.grayLight, fontSize: 13), textAlign: TextAlign.center),
+          const SizedBox(height: 16),
+          GestureDetector(
+            onTap: () => launchUrl(Uri.parse('https://business.google.com'), mode: LaunchMode.externalApplication),
+            child: const Text('Open Google Business →', style: TextStyle(color: TRColors.gold, fontSize: 13, fontWeight: FontWeight.w600)),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _ctrl,
+            style: const TextStyle(color: TRColors.white, fontSize: 13),
+            decoration: InputDecoration(
+              hintText: 'accounts/123456789/locations/987654321',
+              hintStyle: const TextStyle(color: TRColors.grayMid, fontSize: 12),
+              filled: true, fillColor: TRColors.cardMid,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: TRColors.divider)),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: TRColors.divider)),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: TRColors.gold, width: 1.5)),
+            ),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity, height: 52,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: TRColors.gold, foregroundColor: TRColors.navyDeep,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)), elevation: 0),
+              onPressed: _saving ? null : _save,
+              child: _saving
+                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: TRColors.navyDeep, strokeWidth: 2.5))
+                : const Text('Connect', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Skip for now', style: TextStyle(color: TRColors.grayMid)),
+          ),
         ],
       ),
     );

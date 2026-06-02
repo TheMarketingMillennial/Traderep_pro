@@ -7,6 +7,7 @@ import '../../shared/models/models.dart';
 import '../pricing/trial_widgets.dart';
 import '../photos/photo_approval_screen.dart';
 import '../profile/profile_screen.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class DashboardScreen extends StatelessWidget {
   final void Function(int)? onSwitchTab;
@@ -132,6 +133,20 @@ class DashboardScreen extends StatelessWidget {
     );
   }
 
+
+  void _showGbpConnectSheet(BuildContext context, AppState state) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: TRColors.cardDark,
+      isScrollControlled: true,
+      useSafeArea: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => _GbpConnectSheet(state: state),
+    );
+  }
+
   Widget _buildGoogleBanner(BuildContext context, AppState state) {
     if (state.googleConnected) return const SizedBox.shrink();
 
@@ -152,13 +167,13 @@ class DashboardScreen extends StatelessWidget {
             style: TextStyle(color: TRColors.gold, fontSize: 13, fontWeight: FontWeight.w600),
           )),
           TextButton(
-            onPressed: () => state.connectGoogle(),
+            onPressed: () => _showGbpConnectSheet(context, state),
             style: TextButton.styleFrom(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               backgroundColor: TRColors.gold,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ),
-            child: const Text('Connect', style: TextStyle(color: TRColors.navyDeep, fontSize: 12, fontWeight: FontWeight.w700)),
+            child: const Text('Setup', style: TextStyle(color: TRColors.navyDeep, fontSize: 12, fontWeight: FontWeight.w700)),
           ),
         ],
       ),
@@ -571,6 +586,207 @@ class _TeamMemberTile extends StatelessWidget {
             width: 8, height: 8,
             decoration: const BoxDecoration(color: TRColors.success, shape: BoxShape.circle),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+
+// ─── GBP Connect Bottom Sheet ─────────────────────────────────────────────────
+// Guides the admin through entering their GBP Location ID and connecting their
+// Google Business Profile. Real OAuth is handled via browser redirect.
+class _GbpConnectSheet extends StatefulWidget {
+  final AppState state;
+  const _GbpConnectSheet({required this.state});
+
+  @override
+  State<_GbpConnectSheet> createState() => _GbpConnectSheetState();
+}
+
+class _GbpConnectSheetState extends State<_GbpConnectSheet> {
+  final _locationCtrl = TextEditingController();
+  bool _saving = false;
+  bool _saved = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Pre-fill if already set
+    final existing = widget.state.company?.gbpLocationId ?? '';
+    if (existing.isNotEmpty) _locationCtrl.text = existing;
+  }
+
+  @override
+  void dispose() {
+    _locationCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final id = _locationCtrl.text.trim();
+    if (id.isEmpty) return;
+    setState(() => _saving = true);
+    await widget.state.updateGbpLocationId(id);
+    widget.state.connectGoogle();
+    if (mounted) setState(() { _saving = false; _saved = true; });
+    await Future.delayed(const Duration(milliseconds: 800));
+    if (mounted) Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 24, right: 24, top: 20,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 32,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(child: Container(
+            width: 40, height: 4,
+            decoration: BoxDecoration(color: TRColors.divider, borderRadius: BorderRadius.circular(2)),
+          )),
+          const SizedBox(height: 20),
+          Row(children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: TRColors.gold.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.business_rounded, color: TRColors.gold, size: 22),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Connect Google Business Profile',
+                  style: TextStyle(color: TRColors.white, fontSize: 17, fontWeight: FontWeight.w800)),
+                Text('Paste your GBP Location ID below',
+                  style: TextStyle(color: TRColors.grayLight, fontSize: 12)),
+              ],
+            )),
+          ]),
+          const SizedBox(height: 20),
+
+          // Step instructions
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: TRColors.cardMid,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: TRColors.divider),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('How to find your Location ID:',
+                  style: TextStyle(color: TRColors.white, fontSize: 13, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 10),
+                _Step(n: '1', text: 'Go to your Google Business Profile'),
+                _Step(n: '2', text: 'Click the 3-dot menu → Business Profile Settings'),
+                _Step(n: '3', text: 'Scroll to "Advanced settings"'),
+                _Step(n: '4', text: 'Copy the Location ID (format: accounts/xxx/locations/xxx)'),
+                const SizedBox(height: 10),
+                GestureDetector(
+                  onTap: () => launchUrl(
+                    Uri.parse('https://business.google.com'),
+                    mode: LaunchMode.externalApplication,
+                  ),
+                  child: const Text('Open Google Business Profile →',
+                    style: TextStyle(color: TRColors.gold, fontSize: 13, fontWeight: FontWeight.w600)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Location ID input
+          TextField(
+            controller: _locationCtrl,
+            style: const TextStyle(color: TRColors.white, fontSize: 14),
+            decoration: InputDecoration(
+              hintText: 'accounts/123456789/locations/987654321',
+              hintStyle: const TextStyle(color: TRColors.grayMid, fontSize: 13),
+              filled: true,
+              fillColor: TRColors.cardMid,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: TRColors.divider),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: TRColors.divider),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: TRColors.gold, width: 1.5),
+              ),
+              prefixIcon: const Icon(Icons.link_rounded, color: TRColors.grayMid, size: 18),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Save button
+          SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _saved ? TRColors.success : TRColors.gold,
+                foregroundColor: TRColors.navyDeep,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                elevation: 0,
+              ),
+              onPressed: _saving || _saved ? null : _save,
+              child: _saving
+                ? const SizedBox(width: 20, height: 20,
+                    child: CircularProgressIndicator(color: TRColors.navyDeep, strokeWidth: 2.5))
+                : Text(
+                    _saved ? 'Connected!' : 'Connect & Save',
+                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+                  ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Center(
+            child: TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel', style: TextStyle(color: TRColors.grayMid)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Step extends StatelessWidget {
+  final String n, text;
+  const _Step({required this.n, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 20, height: 20,
+            margin: const EdgeInsets.only(right: 8, top: 1),
+            decoration: BoxDecoration(
+              color: TRColors.gold.withValues(alpha: 0.15),
+              shape: BoxShape.circle,
+            ),
+            child: Center(child: Text(n,
+              style: const TextStyle(color: TRColors.gold, fontSize: 11, fontWeight: FontWeight.w800))),
+          ),
+          Expanded(child: Text(text,
+            style: const TextStyle(color: TRColors.grayLight, fontSize: 13))),
         ],
       ),
     );
