@@ -758,14 +758,28 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Starts a trial in local state AND persists to Firestore.
+  /// Used on web (where Stripe SDK is unavailable) and as a fallback.
   void startTrial(PlanTier tier) {
+    final now = DateTime.now();
+    final trialEnd = now.add(const Duration(days: 14));
     _subscription = ActiveSubscription(
       tier: tier,
       status: SubscriptionStatus.trial,
-      trialStartDate: DateTime.now(),
-      trialEndDate: DateTime.now().add(const Duration(days: 14)),
+      trialStartDate: now,
+      trialEndDate: trialEnd,
     );
     notifyListeners();
+
+    // Persist to Firestore so the trial survives app restarts
+    _fs.saveSubscription(
+      tier: tier.name,
+      status: SubscriptionStatus.trial.name,
+      trialStartDate: now,
+      trialEndDate: trialEnd,
+    ).catchError((e) {
+      if (kDebugMode) debugPrint('[AppState] startTrial saveSubscription error: $e');
+    });
   }
 
   /// Called after a successful Stripe payment sheet confirmation.

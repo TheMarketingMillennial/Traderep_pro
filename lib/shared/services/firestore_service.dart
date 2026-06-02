@@ -289,16 +289,42 @@ class FirestoreService {
   // SUBSCRIPTION / SAAS METRICS
   // ══════════════════════════════════════════════════════════════════════════
 
+  /// Reads subscription from companies/{companyId} subscription map (written by
+  /// Railway Stripe webhook) OR from the legacy saas_metrics doc as fallback.
   Future<ActiveSubscription> getSubscription() async {
     try {
-      final doc = await _db
-          .collection('saas_metrics')
-          .doc('metrics_current')
-          .get();
-      if (!doc.exists || doc.data() == null) return ActiveSubscription.none;
+      Map<String, dynamic>? d;
 
-      final d = doc.data()!;
-      final tierStr = (d['plan_tier'] as String?) ?? 'growth';
+      // Primary: read nested subscription map from companies doc
+      // This is exactly what the Railway Stripe webhook writes.
+      final companyDoc = await _db.collection('companies').doc(_companyId).get();
+      if (companyDoc.exists && companyDoc.data() != null) {
+        final compData = companyDoc.data()!;
+        final subMap = compData['subscription'] as Map<String, dynamic>?;
+        if (subMap != null) {
+          // Normalise Railway field names -> our field names
+          d = Map<String, dynamic>.from(subMap);
+          d['plan_tier']              ??= d['price_key'];
+          d['subscription_status']    ??= d['status'];
+          d['trial_start_date']       ??= d['trial_start'];
+          d['trial_end_date']         ??= d['trial_end'];
+        }
+      }
+
+      // Fallback: legacy saas_metrics doc for users who signed up before v2
+      if (d == null) {
+        final metricsDoc = await _db
+            .collection('saas_metrics')
+            .doc('metrics_current')
+            .get();
+        if (metricsDoc.exists && metricsDoc.data() != null) {
+          d = metricsDoc.data()!;
+        }
+      }
+
+      if (d == null) return ActiveSubscription.none;
+
+      final tierStr   = (d['plan_tier']           as String?) ?? 'growth';
       final statusStr = (d['subscription_status'] as String?) ?? 'trial';
 
       final tier = PlanTier.values.firstWhere(
@@ -310,10 +336,20 @@ class FirestoreService {
         orElse: () => SubscriptionStatus.trial,
       );
 
-      final trialStart = (d['trial_start_date'] as Timestamp?)?.toDate() ??
-          DateTime.now().subtract(const Duration(days: 6));
-      final trialEnd = (d['trial_end_date'] as Timestamp?)?.toDate() ??
-          DateTime.now().add(const Duration(days: 8));
+      DateTime tsToDate(dynamic v, DateTime fallback) {
+        if (v is Timestamp) return v.toDate();
+        if (v is String) return DateTime.tryParse(v) ?? fallback;
+        return fallback;
+      }
+
+      final trialStart = tsToDate(
+        d['trial_start_date'],
+        DateTime.now().subtract(const Duration(days: 6)),
+      );
+      final trialEnd = tsToDate(
+        d['trial_end_date'],
+        DateTime.now().add(const Duration(days: 8)),
+      );
 
       final billingRaw = (d['billing_history'] as List<dynamic>?) ?? [];
       final billingHistory = billingRaw.map((b) {
@@ -338,8 +374,6 @@ class FirestoreService {
       );
     } catch (e) {
       if (kDebugMode) debugPrint('FirestoreService getSubscription error: $e');
-      // Return none (not demo) so new users without a Firestore record
-      // are correctly shown the trial gate / pricing screen.
       return ActiveSubscription.none;
     }
   }
