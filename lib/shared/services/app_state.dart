@@ -12,6 +12,7 @@ import 'firestore_service.dart';
 import 'auth_service.dart';
 import 'sms_service.dart';
 import 'gbp_service.dart';
+import 'ai_service.dart';
 
 class AppState extends ChangeNotifier {
   final FirestoreService _fs = FirestoreService();
@@ -24,6 +25,7 @@ class AppState extends ChangeNotifier {
   StreamSubscription<Company?>? _companySub;
   StreamSubscription<List<ProjectTemplate>>? _templatesSub;
   StreamSubscription<List<PhotoSubmission>>? _photoSubmissionsSub;
+  StreamSubscription<List<TeamInvite>>? _pendingInvitesSub;
 
   // ─── Auth State ─────────────────────────────────────────────────────────────
   bool _isLoggedIn = false;
@@ -59,6 +61,24 @@ class AppState extends ChangeNotifier {
 
   List<Job> jobsByStatus(JobStatus status) =>
       _jobs.where((j) => j.status == status).toList();
+
+  // ── Live stat counts (derived from real data — always start at 0) ──────────
+  /// Total jobs ever created (all statuses).
+  int get totalJobsCount => _jobs.length;
+
+  /// Jobs that have been marked completed.
+  int get completedJobsCount => completedJobs.length;
+
+  /// Jobs where a review request was sent.
+  int get reviewsSentCount => _jobs.where((j) => j.reviewSent).length;
+
+  /// Total photos across all jobs.
+  int get photosUploadedCount =>
+      _jobs.fold(0, (sum, j) => sum + j.photos.length);
+
+  /// Published Google posts.
+  int get googlePostsCount =>
+      _posts.where((p) => p.status == ContentStatus.published).length;
 
   void addJob(Job job) {
     _jobs = [job, ..._jobs];
@@ -181,31 +201,51 @@ class AppState extends ChangeNotifier {
         ),
       );
 
-      // Build draft caption from company + job context
+      // Build draft caption — try AI first, fall back to template
       final tradeName = company?.tradeCategory ?? 'Trade';
-      final area = company?.serviceArea ?? '';
-      final bizName = company?.name ?? '';
-      final jobType = job.jobType.isNotEmpty ? job.jobType : submission.jobName;
+      final area      = company?.serviceArea ?? '';
+      final bizName   = company?.name ?? '';
+      final jobType   = job.jobType.isNotEmpty ? job.jobType : submission.jobName;
 
-      final areaStr = area.isNotEmpty ? ' in $area' : '';
-      final bizPrefix = bizName.isNotEmpty ? 'Trusted by $bizName — ' : '';
-      final areaServe = area.isNotEmpty ? ' serving $area' : '';
-      final draftCaption =
-          '$jobType complete$areaStr!\n\n'
-          'Our crew delivered a clean, professional result for another '
-          'happy customer. Every job gets our full attention from start '
-          'to finish.\n\n'
-          '${bizPrefix}Trusted $tradeName Experts$areaServe.\n\n'
-          'Call or message us for a free estimate!';
+      String draftCaption;
+      List<String> hashtags;
 
-      final hashtags = [
-        '#$tradeName'.replaceAll(' ', ''),
-        '#BeforeAndAfter',
-        '#${tradeName}Contractor'.replaceAll(' ', ''),
-        '#HomeImprovement',
-        '#QualityWork',
-        '#ContractorLife',
-      ];
+      // ── Try AI caption ──────────────────────────────────────────────────────
+      final aiResult = await AiService.generateCaption(
+        jobType:        jobType,
+        companyName:    bizName,
+        trade:          tradeName,
+        serviceArea:    area,
+        jobDescription: submission.crewNote ?? '',
+        tone:           CaptionTone.professional,
+      );
+
+      if (aiResult != null) {
+        draftCaption = aiResult.caption;
+        hashtags     = aiResult.hashtags;
+        if (kDebugMode) debugPrint('[AppState] AI caption applied ✅');
+      } else {
+        // ── Template fallback (Railway unreachable or OpenAI not configured) ──
+        if (kDebugMode) debugPrint('[AppState] AI unavailable — using template caption');
+        final areaStr   = area.isNotEmpty ? ' in $area' : '';
+        final bizPrefix = bizName.isNotEmpty ? 'Trusted by $bizName — ' : '';
+        final areaServe = area.isNotEmpty ? ' serving $area' : '';
+        draftCaption =
+            '$jobType complete$areaStr!\n\n'
+            'Our crew delivered a clean, professional result for another '
+            'happy customer. Every job gets our full attention from start '
+            'to finish.\n\n'
+            '${bizPrefix}Trusted $tradeName Experts$areaServe.\n\n'
+            'Call or message us for a free estimate!';
+        hashtags = [
+          '#$tradeName'.replaceAll(' ', ''),
+          '#BeforeAndAfter',
+          '#${tradeName}Contractor'.replaceAll(' ', ''),
+          '#HomeImprovement',
+          '#QualityWork',
+          '#ContractorLife',
+        ];
+      }
 
       final companyId = _fs.companyId;
       final newPost = ContentPost(
@@ -278,11 +318,19 @@ class AppState extends ChangeNotifier {
     _smsSending = true;
     notifyListeners();
 
-    final body = SmsTemplates.reviewRequest.buildBody(
+    // Try AI-personalized message first, fall back to template
+    final aiMessage = await AiService.generateSms(
+      type:         SmsTemplates.reviewRequest.key,
       customerName: customerName,
-      jobType: jobType,
-      companyName: companyName,
-      reviewLink: reviewLink,
+      jobType:      jobType,
+      companyName:  companyName,
+      reviewLink:   reviewLink ?? '',
+    );
+    final body = aiMessage ?? SmsTemplates.reviewRequest.buildBody(
+      customerName: customerName,
+      jobType:      jobType,
+      companyName:  companyName,
+      reviewLink:   reviewLink,
     );
 
     final result = await SmsService.instance.send(
@@ -316,10 +364,17 @@ class AppState extends ChangeNotifier {
     _smsSending = true;
     notifyListeners();
 
-    final body = template.buildBody(
+    // Try AI-personalized message first, fall back to template
+    final aiMessage = await AiService.generateSms(
+      type:         template.key,
       customerName: customerName,
-      jobType: jobType,
-      companyName: companyName,
+      jobType:      jobType,
+      companyName:  companyName,
+    );
+    final body = aiMessage ?? template.buildBody(
+      customerName: customerName,
+      jobType:      jobType,
+      companyName:  companyName,
     );
 
     final result = await SmsService.instance.send(
@@ -377,9 +432,31 @@ class AppState extends ChangeNotifier {
   List<ProjectTemplate> _templates = ProjectTemplate.defaultTemplates;
   List<ProjectTemplate> get templates => _templates;
 
+  /// The company's trade category string (e.g. 'Roofing', 'Plumbing').
+  /// Returns empty string if not yet loaded.
+  String get companyTrade => _company?.tradeCategory ?? '';
+
+  /// Templates whose `tradeCategory` matches the company's trade, sorted to
+  /// the front.  Other trades follow (so the user can still browse them).
+  List<ProjectTemplate> get templatesForCompanyTrade {
+    final trade = companyTrade;
+    if (trade.isEmpty) return _templates;
+    final matched = _templates
+        .where((t) => t.tradeCategory.toLowerCase() == trade.toLowerCase())
+        .toList();
+    final others = _templates
+        .where((t) => t.tradeCategory.toLowerCase() != trade.toLowerCase())
+        .toList();
+    return [...matched, ...others];
+  }
+
   // ─── Team ────────────────────────────────────────────────────────────────────
   List<TRUser> _team = [];
   List<TRUser> get team => _team;
+
+  // ─── Pending Invites (admin-visible) ─────────────────────────────────────────
+  List<TeamInvite> _pendingInvites = [];
+  List<TeamInvite> get pendingInvites => _pendingInvites;
 
   // ─── Photo Submissions ───────────────────────────────────────────────────────
   List<PhotoSubmission> _photoSubmissions = [];
@@ -396,6 +473,40 @@ class AppState extends ChangeNotifier {
     return role == UserRole.admin ||
         role == UserRole.officeManager ||
         role == UserRole.salesRep;
+  }
+
+  /// Admin sends a team invite. Returns the invite ID on success, null on error.
+  Future<String?> sendTeamInvite({
+    required String phone,
+    required String name,
+    required UserRole role,
+  }) async {
+    final company = _company;
+    final admin = _currentUser;
+    if (company == null || admin == null) return null;
+    try {
+      final id = await _fs.sendInvite(
+        phone: phone,
+        name: name,
+        role: role,
+        companyName: company.name,
+        invitedByName: admin.name,
+      );
+      if (kDebugMode) debugPrint('[AppState] Invite sent: $id to $phone');
+      return id;
+    } catch (e) {
+      if (kDebugMode) debugPrint('[AppState] sendTeamInvite error: $e');
+      return null;
+    }
+  }
+
+  /// Admin cancels a pending invite.
+  Future<void> cancelInvite(String inviteId) async {
+    try {
+      await FirestoreService().cancelInvite(inviteId);
+    } catch (e) {
+      if (kDebugMode) debugPrint('[AppState] cancelInvite error: $e');
+    }
   }
 
   /// Any crew member submits photos for a job.
@@ -789,18 +900,41 @@ class AppState extends ChangeNotifier {
       if (fsUser != null) _currentUser = fsUser;
 
       // Load subscription from Firestore.
-      // Timeout/failure → ActiveSubscription.none so the trial gate shows
-      // and the user is prompted to pick a plan rather than getting free access.
+      // If no record exists (brand new user), auto-start a 14-day trial
+      // so they land directly in the app without hitting the gate.
       final fsSub = await _fs.getSubscription().timeout(fsTimeout, onTimeout: () {
         if (kDebugMode) debugPrint('[AppState] getSubscription() timed out — defaulting to none');
         return ActiveSubscription.none;
       });
-      _subscription = fsSub;
+
+      if (fsSub.status == SubscriptionStatus.none) {
+        // Brand new user — auto-start Growth trial and persist it
+        if (kDebugMode) debugPrint('[AppState] New user — auto-starting 14-day trial');
+        final now = DateTime.now();
+        final trialEnd = now.add(const Duration(days: 14));
+        _subscription = ActiveSubscription(
+          tier: PlanTier.growth,
+          status: SubscriptionStatus.trial,
+          trialStartDate: now,
+          trialEndDate: trialEnd,
+        );
+        // Persist so Firestore has a record for next login
+        _fs.saveSubscription(
+          tier: PlanTier.growth.name,
+          status: SubscriptionStatus.trial.name,
+          trialStartDate: now,
+          trialEndDate: trialEnd,
+        ).catchError((e) {
+          if (kDebugMode) debugPrint('[AppState] saveSubscription error: $e');
+        });
+      } else {
+        _subscription = fsSub;
+      }
 
       // Load analytics
       final fsAnalytics = await _fs.getAnalytics().timeout(fsTimeout, onTimeout: () {
         if (kDebugMode) debugPrint('[AppState] getAnalytics() timed out');
-        return AnalyticsSummary.sample;
+        return AnalyticsSummary.empty;
       });
       _analytics = fsAnalytics;
 
@@ -852,6 +986,13 @@ class AppState extends ChangeNotifier {
         if (kDebugMode) debugPrint('Templates stream error: $e');
       });
 
+      _pendingInvitesSub = _fs.pendingInvitesStream().listen((invites) {
+        _pendingInvites = invites;
+        notifyListeners();
+      }, onError: (e) {
+        if (kDebugMode) debugPrint('Pending invites stream error: $e');
+      });
+
       _photoSubmissionsSub = _fs.photoSubmissionsStream().listen((subs) {
         _photoSubmissions = subs;
         notifyListeners();
@@ -876,6 +1017,7 @@ class AppState extends ChangeNotifier {
     _companySub?.cancel();
     _templatesSub?.cancel();
     _photoSubmissionsSub?.cancel();
+    _pendingInvitesSub?.cancel();
   }
 
   @override

@@ -894,7 +894,11 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
         GoldButton(
           label: 'Start Using TradeRep',
           icon: Icons.arrow_forward_rounded,
-          onTap: () => Navigator.pop(context),
+          onTap: () {
+            // Pop all routes back to root (closes both the bottom sheet
+            // AND the PricingScreen pushed by _TrialExpiredGate).
+            Navigator.popUntil(context, (route) => route.isFirst);
+          },
         ),
         const SizedBox(height: 16),
       ],

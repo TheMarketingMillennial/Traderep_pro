@@ -247,7 +247,7 @@ class FirestoreService {
           .where('company_id', isEqualTo: _companyId)
           .get();
 
-      if (snap.docs.isEmpty) return AnalyticsSummary.sample;
+      if (snap.docs.isEmpty) return AnalyticsSummary.empty;
 
       final docs = snap.docs.map((d) => d.data()).toList();
       // Sort by month_date ascending
@@ -281,7 +281,7 @@ class FirestoreService {
       );
     } catch (e) {
       if (kDebugMode) debugPrint('FirestoreService getAnalytics error: $e');
-      return AnalyticsSummary.sample;
+      return AnalyticsSummary.empty;
     }
   }
 
@@ -295,7 +295,7 @@ class FirestoreService {
           .collection('saas_metrics')
           .doc('metrics_current')
           .get();
-      if (!doc.exists || doc.data() == null) return ActiveSubscription.demo;
+      if (!doc.exists || doc.data() == null) return ActiveSubscription.none;
 
       final d = doc.data()!;
       final tierStr = (d['plan_tier'] as String?) ?? 'growth';
@@ -651,5 +651,118 @@ class FirestoreService {
     };
   }
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // TEAM INVITES
+  // ══════════════════════════════════════════════════════════════════════════
 
+  /// Normalize a phone string to digits-only for consistent lookups.
+  static String _normalizePhone(String phone) =>
+      phone.replaceAll(RegExp(r'[^\d]'), '');
+
+  /// Write a pending invite doc keyed by phone number. Returns the invite ID.
+  Future<String> sendInvite({
+    required String phone,
+    required String name,
+    required UserRole role,
+    required String companyName,
+    required String invitedByName,
+  }) async {
+    final inviteId = 'inv_${DateTime.now().millisecondsSinceEpoch}';
+    await _db.collection('invites').doc(inviteId).set({
+      'id':              inviteId,
+      'company_id':      _companyId,
+      'company_name':    companyName,
+      'invited_by_name': invitedByName,
+      'phone':           _normalizePhone(phone),
+      'name':            name.trim(),
+      'role':            role.name,
+      'status':          'pending',
+      'created_at':      FieldValue.serverTimestamp(),
+    });
+    return inviteId;
+  }
+
+  /// Look up a pending invite by phone number. Returns null if none found.
+  Future<TeamInvite?> getPendingInviteByPhone(String phone) async {
+    try {
+      final normalized = _normalizePhone(phone);
+      final snap = await _db
+          .collection('invites')
+          .where('phone', isEqualTo: normalized)
+          .where('status', isEqualTo: 'pending')
+          .limit(1)
+          .get();
+      if (snap.docs.isEmpty) return null;
+      final d = snap.docs.first.data();
+      return TeamInvite(
+        id:            snap.docs.first.id,
+        companyId:     (d['company_id']       as String?) ?? '',
+        companyName:   (d['company_name']      as String?) ?? '',
+        invitedByName: (d['invited_by_name']   as String?) ?? '',
+        phone:         (d['phone']             as String?) ?? '',
+        name:          (d['name']              as String?) ?? '',
+        role:          _roleFromString((d['role'] as String?) ?? 'crewMember'),
+        status:        InviteStatus.pending,
+        createdAt:     (d['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      );
+    } catch (e) {
+      if (kDebugMode) debugPrint('FirestoreService getPendingInviteByPhone error: $e');
+      return null;
+    }
+  }
+
+  /// Admin cancels a pending invite.
+  Future<void> cancelInvite(String inviteId) async {
+    try {
+      await _db.collection('invites').doc(inviteId).update({'status': 'cancelled'});
+    } catch (e) {
+      if (kDebugMode) debugPrint('FirestoreService cancelInvite error: $e');
+    }
+  }
+
+  /// Mark an invite as accepted once the new user has joined.
+  Future<void> acceptInvite(String inviteId) async {
+    try {
+      await _db.collection('invites').doc(inviteId).update({
+        'status': 'accepted',
+        'accepted_at': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      if (kDebugMode) debugPrint('FirestoreService acceptInvite error: $e');
+    }
+  }
+
+  /// Real-time stream of pending invites sent by this company.
+  Stream<List<TeamInvite>> pendingInvitesStream() {
+    return _db
+        .collection('invites')
+        .where('company_id', isEqualTo: _companyId)
+        .where('status', isEqualTo: 'pending')
+        .snapshots()
+        .map((snap) => snap.docs.map((d) {
+              final data = d.data();
+              return TeamInvite(
+                id:            d.id,
+                companyId:     (data['company_id']       as String?) ?? '',
+                companyName:   (data['company_name']      as String?) ?? '',
+                invitedByName: (data['invited_by_name']   as String?) ?? '',
+                phone:         (data['phone']             as String?) ?? '',
+                name:          (data['name']              as String?) ?? '',
+                role:          _roleFromString((data['role'] as String?) ?? 'crewMember'),
+                status:        InviteStatus.pending,
+                createdAt:     (data['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
+              );
+            }).toList())
+        .handleError((e) {
+      if (kDebugMode) debugPrint('FirestoreService pendingInvitesStream error: $e');
+      return <TeamInvite>[];
+    });
+  }
+
+  UserRole _roleFromString(String s) {
+    return UserRole.values.firstWhere(
+      (r) => r.name == s,
+      orElse: () => UserRole.crewMember,
+    );
+  }
 }

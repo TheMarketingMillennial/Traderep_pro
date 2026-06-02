@@ -58,23 +58,32 @@ Future<void> main() async {
 }
 
 Future<void> _initFirebase() async {
-  // Firebase config is now embedded in firebase_options.dart for all platforms.
-  // Always attempt initialization — no --dart-define flags needed.
+  // Firebase config is embedded in firebase_options.dart.
+  // firebase_core_web injects the JS SDK scripts automatically at runtime.
   try {
     debugPrint('[Firebase] Initializing...');
+
+    // If already initialized (hot restart), just mark and return
+    if (Firebase.apps.isNotEmpty) {
+      AppConfig.markFirebaseInitialized();
+      debugPrint('[Firebase] Already initialized ✅ (apps: ${Firebase.apps.length})');
+      return;
+    }
+
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     ).timeout(
-      const Duration(seconds: 10),
-      onTimeout: () => throw TimeoutException('Firebase init timed out'),
+      const Duration(seconds: 20),
+      onTimeout: () => throw TimeoutException('Firebase init timed out after 20s'),
     );
     AppConfig.markFirebaseInitialized();
     debugPrint('[Firebase] Initialized ✅ (apps: ${Firebase.apps.length})');
   } on TimeoutException catch (e) {
-    debugPrint('[Firebase] ⚠️ Init TIMEOUT: $e');
+    AppConfig.firebaseInitError = 'Firebase timed out: $e';
+    debugPrint('[Firebase] ⚠️ TIMEOUT: $e');
   } catch (e) {
-    debugPrint('[Firebase] ⚠️ Init ERROR: $e');
-    debugPrint('[Firebase] ⚠️ Error type: ${e.runtimeType}');
+    AppConfig.firebaseInitError = e.toString();
+    debugPrint('[Firebase] ⚠️ ERROR: $e  (type: ${e.runtimeType})');
   }
 }
 

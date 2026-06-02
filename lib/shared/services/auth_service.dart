@@ -75,9 +75,8 @@ class AuthService {
     if (!isAvailable) {
       debugPrint('[AuthService] Firebase not configured — blocking sign-in');
       debugPrint('[AuthService] Firebase.apps.length = ${_tryGetAppsLength()}');
-      return AuthResult.fail(
-        'Firebase did not initialize. Check your internet connection and reload the app.',
-      );
+      final extra = AppConfig.firebaseInitError != null ? '\n\nDetail: ${AppConfig.firebaseInitError}' : '';
+      return AuthResult.fail('Firebase did not initialize.$extra\n\nPlease reload the app.');
     }
 
     try {
@@ -126,9 +125,8 @@ class AuthService {
     if (!isAvailable) {
       debugPrint('[AuthService] Firebase not configured — blocking sign-up');
       debugPrint('[AuthService] Firebase.apps.length = ${_tryGetAppsLength()}');
-      return AuthResult.fail(
-        'Firebase did not initialize. Check your internet connection and reload the app.',
-      );
+      final extra = AppConfig.firebaseInitError != null ? '\n\nDetail: ${AppConfig.firebaseInitError}' : '';
+      return AuthResult.fail('Firebase did not initialize.$extra\n\nPlease reload the app.');
     }
 
     try {
@@ -185,30 +183,72 @@ class AuthService {
     required String phone,
   }) async {
     try {
+      // ── Check for a pending invite by phone number ────────────────────────
+      // If this phone was invited by an existing company admin, join that
+      // company instead of creating a new one.
+      final normalizedPhone = phone.replaceAll(RegExp(r'[^\d]'), '');
+      final inviteSnap = await _db
+          .collection('invites')
+          .where('phone', isEqualTo: normalizedPhone)
+          .where('status', isEqualTo: 'pending')
+          .limit(1)
+          .get()
+          .timeout(const Duration(seconds: 8));
+
+      if (inviteSnap.docs.isNotEmpty) {
+        final invite = inviteSnap.docs.first;
+        final inviteData = invite.data();
+        final companyId   = inviteData['company_id']  as String? ?? uid;
+        final roleName    = inviteData['role']         as String? ?? 'crewMember';
+        final invitedName = inviteData['name']         as String? ?? fullName;
+
+        // Write user doc pointing to the existing company
+        await _db.collection('users').doc(uid).set({
+          'uid':        uid,
+          'name':       invitedName,
+          'email':      email,
+          'role':       roleName,
+          'company_id': companyId,
+          'avatar_url': '',
+          'created_at': FieldValue.serverTimestamp(),
+        }).timeout(const Duration(seconds: 10));
+
+        // Mark invite accepted
+        await invite.reference.update({
+          'status':      'accepted',
+          'accepted_uid': uid,
+          'accepted_at': FieldValue.serverTimestamp(),
+        });
+
+        debugPrint('[AuthService] Joined existing company $companyId via invite ${invite.id}');
+        return; // skip creating a new company doc
+      }
+
+      // ── No invite — new owner, create company + user docs ────────────────
       final batch = _db.batch();
 
       batch.set(_db.collection('companies').doc(uid), {
-        'name': companyName,
-        'owner_uid': uid,
-        'trade_category': tradeCategory,
-        'phone': phone,
-        'email': email,
-        'logo_url': '',
-        'service_area': '',
-        'website': '',
-        'team_size': 1,
-        'google_connected': false,
-        'google_business_id': '',
-        'google_review_link': '',
-        'gbp_location_id': null,
-        'created_at': FieldValue.serverTimestamp(),
+        'name':              companyName,
+        'owner_uid':         uid,
+        'trade_category':    tradeCategory,
+        'phone':             phone,
+        'email':             email,
+        'logo_url':          '',
+        'service_area':      '',
+        'website':           '',
+        'team_size':         1,
+        'google_connected':  false,
+        'google_business_id':'',
+        'google_review_link':'',
+        'gbp_location_id':   null,
+        'created_at':        FieldValue.serverTimestamp(),
       });
 
       batch.set(_db.collection('users').doc(uid), {
-        'uid': uid,
-        'name': fullName,
-        'email': email,
-        'role': 'admin',
+        'uid':        uid,
+        'name':       fullName,
+        'email':      email,
+        'role':       'admin',
         'company_id': uid,
         'avatar_url': '',
         'created_at': FieldValue.serverTimestamp(),

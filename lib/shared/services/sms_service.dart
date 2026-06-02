@@ -1,12 +1,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // SMS SERVICE — TradeRep Pro
 //
-// Flutter-side HTTP client that talks to sms_server.py.
+// Flutter-side HTTP client that calls the Railway backend.
 // All Twilio credentials stay on the server — Flutter never sees them.
-//
-// ─── Switching to live Twilio ────────────────────────────────────────────────
-// No changes needed in this file.
-// Set MOCK_MODE=false in .env on the server and restart sms_server.py.
+// Endpoints: POST /sms/send, GET /sms/log, GET /health
 // ─────────────────────────────────────────────────────────────────────────────
 
 import 'dart:convert';
@@ -21,8 +18,7 @@ class SmsService {
 
   // ── Server URL ──────────────────────────────────────────────────────────────
   // Reads from --dart-define=SMS_SERVER_URL=https://your-app.up.railway.app
-  // Defaults to localhost:5061 for local development.
-  // See lib/core/config/app_config.dart for configuration details.
+  // Defaults to Railway production URL. See app_config.dart for details.
   static String get _baseUrl => AppConfig.smsServerUrl;
 
   // Timeout for individual SMS send requests
@@ -132,7 +128,7 @@ class SmsService {
   }
 
   // ── Local Mock Fallback ─────────────────────────────────────────────────────
-  // Used when sms_server.py is not running (e.g. pure Flutter web preview).
+  // Used when Railway server is unreachable (e.g. no internet, local dev).
   // Produces a realistic SmsMessage so the UI still works fully.
   SmsResult _localMockSend({
     required String toPhone,

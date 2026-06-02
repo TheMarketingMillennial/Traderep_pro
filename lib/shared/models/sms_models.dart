@@ -181,32 +181,35 @@ class SmsTemplates {
   static final reviewRequest = SmsTemplate(
     key: 'review_request',
     label: 'Google Review Request',
-    description: 'Sends customer a link to leave a Google review',
+    description: 'Asks customer to leave a Google review after job completion',
     type: SmsType.reviewRequest,
     buildBody: ({required customerName, required jobType, required companyName, reviewLink}) =>
       (reviewLink != null && reviewLink.isNotEmpty)
-        ? 'Hi $customerName! Your $jobType with $companyName is complete. '
-          'We\'d love your feedback — could you spare 2 minutes to leave us a Google review? '
-          '$reviewLink Thank you! 🌟'
-        : 'Hi $customerName! Your $jobType with $companyName is complete. '
-          'Thank you so much for choosing us! 🌟',
+        ? 'Hey $customerName — $companyName here. We just wrapped up your $jobType '
+          'and wanted to say thanks for trusting us with the work. '
+          'If you have 60 seconds, a Google review means the world to a small business: '
+          '$reviewLink\n\nNo pressure at all — appreciate you either way! 🙏'
+        : 'Hey $customerName — $companyName here. Just wanted to say thank you '
+          'for choosing us for your $jobType. It was a pleasure working with you. '
+          'If you ever need us again, don\'t hesitate to reach out! 🙏',
   );
 
   // ── Status Updates ──────────────────────────────────────────────────────────
   static final scheduled = SmsTemplate(
     key: 'status_scheduled',
-    label: 'Project Scheduled',
-    description: 'Notifies customer their project has been scheduled',
+    label: 'Job Scheduled',
+    description: 'Lets the customer know when we\'re coming',
     type: SmsType.statusUpdate,
     buildBody: ({required customerName, required jobType, required companyName, reviewLink}) =>
-      'Hi $customerName! Great news — your $jobType with $companyName has been scheduled. '
-      'We\'ll be in touch with the exact date and time. Questions? Reply to this message.',
+      'Hey $customerName! This is $companyName — we\'ve got your $jobType on the schedule. '
+      'We\'ll send you a heads up before we head your way. '
+      'Any questions in the meantime, just reply here.',
   );
 
   static final crewOnWay = SmsTemplate(
     key: 'status_crew_on_way',
     label: 'Crew On the Way',
-    description: 'Lets customer know the crew is heading to the job site',
+    description: 'Heads up text when crew is leaving for the job',
     type: SmsType.statusUpdate,
     variables: [
       SmsTemplateVariable(
@@ -217,39 +220,40 @@ class SmsTemplates {
       ),
     ],
     buildBody: ({required customerName, required jobType, required companyName, reviewLink}) =>
-      'Hi $customerName! Your $companyName crew is on their way to your property now. '
-      'Expected arrival in {{eta}}. Thank you for choosing us! 🚛',
+      'Hey $customerName — $companyName here. Our crew just left and we\'re heading your way now. '
+      'Should be there in about {{eta}}. See you soon! 🚛',
   );
 
   static final inProgress = SmsTemplate(
     key: 'status_in_progress',
-    label: 'Project In Progress',
-    description: 'Confirms work has started on the customer\'s project',
+    label: 'Work Started',
+    description: 'Quick text once the crew gets started on site',
     type: SmsType.statusUpdate,
     buildBody: ({required customerName, required jobType, required companyName, reviewLink}) =>
-      'Hi $customerName! Work has officially started on your $jobType. '
-      'Our $companyName crew is on-site and making great progress. We\'ll keep you updated!',
+      'Hey $customerName! $companyName here — we\'re on site and the crew just got started on your $jobType. '
+      'We\'ll keep you posted as things move along.',
   );
 
   static final completed = SmsTemplate(
     key: 'status_completed',
-    label: 'Project Completed',
-    description: 'Confirms the project is done',
+    label: 'Job Wrapped Up',
+    description: 'Notifies customer the work is done and crew has cleaned up',
     type: SmsType.statusUpdate,
     buildBody: ({required customerName, required jobType, required companyName, reviewLink}) =>
-      'Hi $customerName! Your $jobType is complete! ✅ '
-      'The $companyName crew has finished and cleaned up. '
-      'Please take a look and let us know if you have any questions.',
+      'Hey $customerName — $companyName here. Your $jobType is all wrapped up! ✅ '
+      'The crew has cleaned up and cleared out. '
+      'Take a look when you get a chance and let us know if you have any questions.',
   );
 
   static final thankYou = SmsTemplate(
     key: 'status_thank_you',
     label: 'Thank You',
-    description: 'Sends a thank you message after project completion',
+    description: 'Personal thank you after the job is complete',
     type: SmsType.statusUpdate,
     buildBody: ({required customerName, required jobType, required companyName, reviewLink}) =>
-      'Hi $customerName! Thank you for choosing $companyName for your $jobType. '
-      'It was a pleasure working with you. We\'re always here if you need us again! 🏠',
+      'Hey $customerName — just wanted to personally say thank you for choosing $companyName. '
+      'Your $jobType was a great project and we really appreciate your business. '
+      'We\'re always here if you need anything down the road. 🏠',
   );
 
   // ── All templates by type ───────────────────────────────────────────────────

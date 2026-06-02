@@ -25,9 +25,9 @@ class AnalyticsScreen extends StatelessWidget {
         child: CustomScrollView(
           slivers: [
             SliverToBoxAdapter(child: _buildHeader()),
-            SliverToBoxAdapter(child: _buildKPIs(analytics)),
+            SliverToBoxAdapter(child: _buildKPIs(state)),
             SliverToBoxAdapter(child: _buildChart(analytics)),
-            SliverToBoxAdapter(child: _buildReviewFunnel(analytics)),
+            SliverToBoxAdapter(child: _buildReviewFunnel(state)),
             // Crew Performance — locked for Starter
             SliverToBoxAdapter(
               child: canCrew
@@ -179,7 +179,7 @@ class AnalyticsScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildKPIs(AnalyticsSummary analytics) {
+  Widget _buildKPIs(AppState state) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
       child: GridView.count(
@@ -192,27 +192,25 @@ class AnalyticsScreen extends StatelessWidget {
         children: [
           TRStatCard(
             label: 'Projects Completed',
-            value: '${analytics.projectsCompleted}',
+            value: '${state.completedJobsCount}',
             icon: Icons.check_circle_rounded,
             accentColor: TRColors.success,
-            trend: '+12%',
           ),
           TRStatCard(
-            label: 'Reviews Generated',
-            value: '${analytics.reviewsGenerated}',
+            label: 'Reviews Sent',
+            value: '${state.reviewsSentCount}',
             icon: Icons.star_rounded,
             accentColor: TRColors.gold,
-            trend: '+8%',
           ),
           TRStatCard(
             label: 'Photos Uploaded',
-            value: '${analytics.photosUploaded}',
+            value: '${state.photosUploadedCount}',
             icon: Icons.photo_camera_rounded,
             accentColor: TRColors.info,
           ),
           TRStatCard(
             label: 'Google Posts',
-            value: '${analytics.googlePosts}',
+            value: '${state.googlePostsCount}',
             icon: Icons.business_center_rounded,
             accentColor: TRColors.statusLead,
           ),
@@ -309,12 +307,14 @@ class AnalyticsScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildReviewFunnel(AnalyticsSummary analytics) {
-    final rate = analytics.reviewResponseRate;
-    final sent = analytics.reviewsGenerated + 9;
-    final opened = (sent * 0.85).round();
-    final clicked = (sent * 0.68).round();
-    final reviewed = analytics.reviewsGenerated;
+  Widget _buildReviewFunnel(AppState state) {
+    final sent = state.reviewsSentCount;
+    // Only compute funnel ratios when we have real data;
+    // otherwise everything is 0 so bars stay empty.
+    final opened = sent > 0 ? (sent * 0.85).round() : 0;
+    final clicked = sent > 0 ? (sent * 0.68).round() : 0;
+    final reviewed = sent;
+    final rate = sent > 0 ? reviewed / sent : 0.0;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
@@ -333,7 +333,7 @@ class AnalyticsScreen extends StatelessWidget {
                 color: TRColors.white, fontSize: 15, fontWeight: FontWeight.w700,
               )),
               const Spacer(),
-              Text('${(rate * 100).round()}% response rate', style: const TextStyle(
+              Text(sent > 0 ? '${(rate * 100).round()}% response rate' : 'No requests yet', style: const TextStyle(
                 color: TRColors.success, fontSize: 12, fontWeight: FontWeight.w600,
               )),
             ]),
@@ -430,9 +430,9 @@ class AnalyticsScreen extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 14),
-            _GoogleStat(label: 'Posts Published', value: '22', icon: Icons.post_add_rounded, color: TRColors.info),
+            _GoogleStat(label: 'Posts Published', value: '${state.googlePostsCount}', icon: Icons.post_add_rounded, color: TRColors.info),
             const SizedBox(height: 10),
-            _GoogleStat(label: 'Photos Uploaded to GBP', value: '47', icon: Icons.photo_rounded, color: TRColors.statusLead),
+            _GoogleStat(label: 'Photos Uploaded to GBP', value: '${state.photosUploadedCount}', icon: Icons.photo_rounded, color: TRColors.statusLead),
             const SizedBox(height: 10),
             _GoogleStat(label: 'Profile Views (est.)', value: '1,284', icon: Icons.visibility_rounded, color: TRColors.success),
             const SizedBox(height: 10),

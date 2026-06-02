@@ -17,8 +17,6 @@ class DashboardScreen extends StatelessWidget {
     final state = context.watch<AppState>();
     final user = state.currentUser;
     final company = state.company;
-    final analytics = state.analytics;
-
     return Scaffold(
       backgroundColor: TRColors.navyDeep,
       body: SafeArea(
@@ -27,7 +25,7 @@ class DashboardScreen extends StatelessWidget {
             SliverToBoxAdapter(child: _buildHeader(context, user, company, state)),
             SliverToBoxAdapter(child: TrialBanner()),
             SliverToBoxAdapter(child: _buildGoogleBanner(context, state)),
-            SliverToBoxAdapter(child: _buildStats(analytics)),
+            SliverToBoxAdapter(child: _buildStats(state)),
             SliverToBoxAdapter(child: _buildPendingContent(context, state)),
             SliverToBoxAdapter(child: _buildPendingPhotos(context, state)),
             SliverToBoxAdapter(child: _buildRecentJobs(context, state)),
@@ -167,13 +165,13 @@ class DashboardScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildStats(AnalyticsSummary analytics) {
+  Widget _buildStats(AppState state) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SectionHeader(title: 'This Month'),
+          const SectionHeader(title: 'Your Activity'),
           const SizedBox(height: 12),
           GridView.count(
             shrinkWrap: true,
@@ -185,27 +183,25 @@ class DashboardScreen extends StatelessWidget {
             children: [
               TRStatCard(
                 label: 'Jobs Completed',
-                value: '${analytics.projectsCompleted}',
+                value: '${state.completedJobsCount}',
                 icon: Icons.check_circle_rounded,
                 accentColor: TRColors.success,
-                trend: '+12%',
               ),
               TRStatCard(
-                label: 'Reviews Earned',
-                value: '${analytics.reviewsGenerated}',
+                label: 'Reviews Sent',
+                value: '${state.reviewsSentCount}',
                 icon: Icons.star_rounded,
                 accentColor: TRColors.gold,
-                trend: '+8%',
               ),
               TRStatCard(
                 label: 'Photos Uploaded',
-                value: '${analytics.photosUploaded}',
+                value: '${state.photosUploadedCount}',
                 icon: Icons.photo_library_rounded,
                 accentColor: TRColors.info,
               ),
               TRStatCard(
                 label: 'Google Posts',
-                value: '${analytics.googlePosts}',
+                value: '${state.googlePostsCount}',
                 icon: Icons.business_rounded,
                 accentColor: TRColors.statusLead,
               ),

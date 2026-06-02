@@ -220,6 +220,37 @@ class TRUser {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// TEAM INVITE MODEL
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum InviteStatus { pending, accepted, expired }
+
+class TeamInvite {
+  final String id;
+  final String companyId;
+  final String companyName;
+  final String invitedByName;
+  /// Normalized E.164-ish phone number used as the invite lookup key.
+  final String phone;
+  final String name;
+  final UserRole role;
+  final InviteStatus status;
+  final DateTime createdAt;
+
+  const TeamInvite({
+    required this.id,
+    required this.companyId,
+    required this.companyName,
+    required this.invitedByName,
+    required this.phone,
+    required this.name,
+    required this.role,
+    required this.status,
+    required this.createdAt,
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // JOB MODEL
 // ─────────────────────────────────────────────────────────────────────────────
 class Job {
@@ -563,7 +594,17 @@ class ProjectTemplate {
     required this.shots,
   });
 
+  /// Returns only the templates that match [tradeCategory].
+  /// Falls back to the full list if none match (e.g. custom trade name).
+  static List<ProjectTemplate> forTrade(String tradeCategory) {
+    final matched = defaultTemplates
+        .where((t) => t.tradeCategory.toLowerCase() == tradeCategory.toLowerCase())
+        .toList();
+    return matched.isNotEmpty ? matched : defaultTemplates;
+  }
+
   static List<ProjectTemplate> get defaultTemplates => [
+    // ── Roofing ──────────────────────────────────────────────────────────────
     ProjectTemplate(
       id: 'tmpl_roofing',
       name: 'Roofing Job',
@@ -577,6 +618,7 @@ class ProjectTemplate {
         TemplateShot(id: 's5', name: 'Cleanup Photo', instruction: 'Show clean yard with no debris', phase: PhotoType.after),
       ],
     ),
+    // ── Remodeling ───────────────────────────────────────────────────────────
     ProjectTemplate(
       id: 'tmpl_bathroom',
       name: 'Bathroom Remodel',
@@ -592,6 +634,21 @@ class ProjectTemplate {
       ],
     ),
     ProjectTemplate(
+      id: 'tmpl_kitchen',
+      name: 'Kitchen Remodel',
+      tradeCategory: 'Remodeling',
+      emoji: '🍳',
+      shots: [
+        TemplateShot(id: 's1', name: 'Full Kitchen Before', instruction: 'Stand in the far corner — capture the whole kitchen', phase: PhotoType.before),
+        TemplateShot(id: 's2', name: 'Cabinets Before', instruction: 'Straight-on shot of existing cabinet run', phase: PhotoType.before),
+        TemplateShot(id: 's3', name: 'Demo / Progress', instruction: 'Document demo or rough-in stage', phase: PhotoType.progress),
+        TemplateShot(id: 's4', name: 'Full Kitchen After', instruction: 'Same corner angle — show the transformation', phase: PhotoType.after),
+        TemplateShot(id: 's5', name: 'Countertop Detail', instruction: 'Close-up of countertop edge and backsplash', phase: PhotoType.after),
+        TemplateShot(id: 's6', name: 'Cabinet Hardware', instruction: 'Pull-detail or handle close-up', phase: PhotoType.after),
+      ],
+    ),
+    // ── HVAC ─────────────────────────────────────────────────────────────────
+    ProjectTemplate(
       id: 'tmpl_hvac',
       name: 'HVAC Installation',
       tradeCategory: 'HVAC',
@@ -603,9 +660,10 @@ class ProjectTemplate {
         TemplateShot(id: 's4', name: 'Thermostat', instruction: 'Photograph the new thermostat display', phase: PhotoType.after),
       ],
     ),
+    // ── Painting ─────────────────────────────────────────────────────────────
     ProjectTemplate(
-      id: 'tmpl_painting',
-      name: 'Painting',
+      id: 'tmpl_painting_interior',
+      name: 'Interior Painting',
       tradeCategory: 'Painting',
       emoji: '🎨',
       shots: [
@@ -613,6 +671,136 @@ class ProjectTemplate {
         TemplateShot(id: 's2', name: 'Wall Close-Up', instruction: 'Show existing paint condition or damage', phase: PhotoType.before),
         TemplateShot(id: 's3', name: 'Room After', instruction: 'Same wide angle — show the color transformation', phase: PhotoType.after),
         TemplateShot(id: 's4', name: 'Trim Detail', instruction: 'Close-up of crisp trim lines and edges', phase: PhotoType.after),
+      ],
+    ),
+    ProjectTemplate(
+      id: 'tmpl_painting_exterior',
+      name: 'Exterior Painting',
+      tradeCategory: 'Painting',
+      emoji: '🏡',
+      shots: [
+        TemplateShot(id: 's1', name: 'Front of Home Before', instruction: 'Stand at the curb — capture full front elevation', phase: PhotoType.before),
+        TemplateShot(id: 's2', name: 'Peeling / Damage', instruction: 'Close-up of areas needing prep work', phase: PhotoType.before),
+        TemplateShot(id: 's3', name: 'Front of Home After', instruction: 'Same curb angle — show the new color', phase: PhotoType.after),
+        TemplateShot(id: 's4', name: 'Trim & Accent Detail', instruction: 'Close-up of trim, shutters, or front door', phase: PhotoType.after),
+      ],
+    ),
+    // ── Plumbing ─────────────────────────────────────────────────────────────
+    ProjectTemplate(
+      id: 'tmpl_plumbing_repair',
+      name: 'Plumbing Repair',
+      tradeCategory: 'Plumbing',
+      emoji: '🔧',
+      shots: [
+        TemplateShot(id: 's1', name: 'Problem Area', instruction: 'Document the leak, damage, or failed fixture', phase: PhotoType.before),
+        TemplateShot(id: 's2', name: 'Under Sink / Access', instruction: 'Capture the access area and pipe layout', phase: PhotoType.before),
+        TemplateShot(id: 's3', name: 'Completed Repair', instruction: 'Show the repaired pipe or fixture — same angle', phase: PhotoType.after),
+        TemplateShot(id: 's4', name: 'Clean Work Area', instruction: 'Show the cleaned-up work area', phase: PhotoType.after),
+      ],
+    ),
+    ProjectTemplate(
+      id: 'tmpl_plumbing_install',
+      name: 'Fixture Installation',
+      tradeCategory: 'Plumbing',
+      emoji: '🚿',
+      shots: [
+        TemplateShot(id: 's1', name: 'Existing Fixture', instruction: 'Photograph the old fixture before removal', phase: PhotoType.before),
+        TemplateShot(id: 's2', name: 'Rough-In', instruction: 'Document pipe rough-in or valve stub-outs', phase: PhotoType.progress),
+        TemplateShot(id: 's3', name: 'New Fixture Installed', instruction: 'Straight-on shot of completed fixture', phase: PhotoType.after),
+        TemplateShot(id: 's4', name: 'Overall Area', instruction: 'Wide shot showing the full bathroom or kitchen area', phase: PhotoType.after),
+      ],
+    ),
+    // ── Electrical ───────────────────────────────────────────────────────────
+    ProjectTemplate(
+      id: 'tmpl_electrical_panel',
+      name: 'Panel Upgrade',
+      tradeCategory: 'Electrical',
+      emoji: '⚡',
+      shots: [
+        TemplateShot(id: 's1', name: 'Old Panel', instruction: 'Open panel door — capture full interior and label', phase: PhotoType.before),
+        TemplateShot(id: 's2', name: 'Exterior Panel Box', instruction: 'Show exterior meter and weatherhead', phase: PhotoType.before),
+        TemplateShot(id: 's3', name: 'New Panel Interior', instruction: 'Open new panel — show organized breakers and labeling', phase: PhotoType.after),
+        TemplateShot(id: 's4', name: 'New Panel Exterior', instruction: 'Closed exterior shot of the new panel box', phase: PhotoType.after),
+      ],
+    ),
+    ProjectTemplate(
+      id: 'tmpl_electrical_outlets',
+      name: 'Outlet / Wiring Job',
+      tradeCategory: 'Electrical',
+      emoji: '🔌',
+      shots: [
+        TemplateShot(id: 's1', name: 'Existing Outlet / Wiring', instruction: 'Document old outlet, junction box, or exposed wiring', phase: PhotoType.before),
+        TemplateShot(id: 's2', name: 'Work in Progress', instruction: 'Capture wire routing or device rough-in', phase: PhotoType.progress),
+        TemplateShot(id: 's3', name: 'Completed Outlet / Device', instruction: 'Close-up of installed outlet, switch, or fixture', phase: PhotoType.after),
+        TemplateShot(id: 's4', name: 'Cover Plate Detail', instruction: 'Final cover plate installed and flush', phase: PhotoType.after),
+      ],
+    ),
+    // ── Flooring ─────────────────────────────────────────────────────────────
+    ProjectTemplate(
+      id: 'tmpl_flooring',
+      name: 'Flooring Installation',
+      tradeCategory: 'Flooring',
+      emoji: '🪵',
+      shots: [
+        TemplateShot(id: 's1', name: 'Existing Floor', instruction: 'Wide room shot of old floor from the doorway', phase: PhotoType.before),
+        TemplateShot(id: 's2', name: 'Subfloor / Demo', instruction: 'Document subfloor condition after demo', phase: PhotoType.progress),
+        TemplateShot(id: 's3', name: 'Completed Floor Wide', instruction: 'Doorway angle — same as before shot', phase: PhotoType.after),
+        TemplateShot(id: 's4', name: 'Floor Pattern Detail', instruction: 'Close-up of plank pattern, tile layout, or transition', phase: PhotoType.after),
+        TemplateShot(id: 's5', name: 'Transition / Baseboard', instruction: 'Show clean baseboard and transition strip', phase: PhotoType.after),
+      ],
+    ),
+    // ── General Contractor ───────────────────────────────────────────────────
+    ProjectTemplate(
+      id: 'tmpl_gc_exterior',
+      name: 'Exterior Build / Addition',
+      tradeCategory: 'General Contractor',
+      emoji: '🏗️',
+      shots: [
+        TemplateShot(id: 's1', name: 'Site Before', instruction: 'Wide shot of the full project site', phase: PhotoType.before),
+        TemplateShot(id: 's2', name: 'Foundation / Framing', instruction: 'Document foundation or framing stage', phase: PhotoType.progress),
+        TemplateShot(id: 's3', name: 'Mid-Project Wide', instruction: 'Wide progress shot from same angle as before', phase: PhotoType.progress),
+        TemplateShot(id: 's4', name: 'Completed Exterior', instruction: 'Final wide shot — match the before angle', phase: PhotoType.after),
+        TemplateShot(id: 's5', name: 'Detail / Craftsmanship', instruction: 'Close-up of a standout finishing detail', phase: PhotoType.after),
+      ],
+    ),
+    ProjectTemplate(
+      id: 'tmpl_gc_interior',
+      name: 'Interior Build-Out',
+      tradeCategory: 'General Contractor',
+      emoji: '🔨',
+      shots: [
+        TemplateShot(id: 's1', name: 'Space Before', instruction: 'Widest possible shot of the unfinished space', phase: PhotoType.before),
+        TemplateShot(id: 's2', name: 'Framing / Rough-In', instruction: 'Document wall framing, MEP rough-ins', phase: PhotoType.progress),
+        TemplateShot(id: 's3', name: 'Drywall Stage', instruction: 'Show drywall hung and taped', phase: PhotoType.progress),
+        TemplateShot(id: 's4', name: 'Completed Space', instruction: 'Same angle as before — show the finished room', phase: PhotoType.after),
+        TemplateShot(id: 's5', name: 'Detail Finish', instruction: 'Close-up of trim, built-ins, or standout feature', phase: PhotoType.after),
+      ],
+    ),
+    // ── Home Services ────────────────────────────────────────────────────────
+    ProjectTemplate(
+      id: 'tmpl_home_services',
+      name: 'Home Service Call',
+      tradeCategory: 'Home Services',
+      emoji: '🏡',
+      shots: [
+        TemplateShot(id: 's1', name: 'Issue / Problem', instruction: 'Document the problem area clearly', phase: PhotoType.before),
+        TemplateShot(id: 's2', name: 'Work in Progress', instruction: 'Show work being performed', phase: PhotoType.progress),
+        TemplateShot(id: 's3', name: 'Completed Work', instruction: 'Same angle — show the fix or improvement', phase: PhotoType.after),
+        TemplateShot(id: 's4', name: 'Clean Site', instruction: 'Show the area cleaned up and ready for the customer', phase: PhotoType.after),
+      ],
+    ),
+    // ── Construction ────────────────────────────────────────────────────────
+    ProjectTemplate(
+      id: 'tmpl_construction_new',
+      name: 'New Construction',
+      tradeCategory: 'Construction',
+      emoji: '👷',
+      shots: [
+        TemplateShot(id: 's1', name: 'Site Before Break', instruction: 'Raw lot or demolition site before work starts', phase: PhotoType.before),
+        TemplateShot(id: 's2', name: 'Foundation', instruction: 'Capture foundation pour or footings', phase: PhotoType.progress),
+        TemplateShot(id: 's3', name: 'Framing', instruction: 'Wide shot of framing stage', phase: PhotoType.progress),
+        TemplateShot(id: 's4', name: 'Exterior Completed', instruction: 'Front elevation of the finished structure', phase: PhotoType.after),
+        TemplateShot(id: 's5', name: 'Interior Feature', instruction: 'Highlight a standout interior space or finish', phase: PhotoType.after),
       ],
     ),
   ];

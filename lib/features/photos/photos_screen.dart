@@ -289,14 +289,50 @@ class _PhotosScreenState extends State<PhotosScreen>
 
           const SizedBox(height: 20),
 
-          // Photo templates
+          // Photo templates — trade-aware split
+          _buildTemplateSection(state),
+        ],
+      ),
+    );
+  }
+
+  // ─── Template Section (trade-aware) ──────────────────────────────────────────
+
+  Widget _buildTemplateSection(AppState state) {
+    final trade = state.companyTrade;
+    final allTemplates = state.templatesForCompanyTrade;
+
+    if (trade.isEmpty) {
+      // Company not loaded yet — show all without split
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
           const Text('Photo Templates', style: TextStyle(
             color: TRColors.white, fontSize: 17, fontWeight: FontWeight.w700,
           )),
           const SizedBox(height: 12),
-          ...state.templates.map((tmpl) => _TemplateTile(template: tmpl)),
+          ...allTemplates.map((t) => _TemplateTile(template: t)),
         ],
-      ),
+      );
+    }
+
+    final tradeEmoji = TradeCategory.values
+        .firstWhere((c) => c.displayName == trade,
+            orElse: () => TradeCategory.homeServices)
+        .emoji;
+
+    final matched = allTemplates
+        .where((t) => t.tradeCategory.toLowerCase() == trade.toLowerCase())
+        .toList();
+    final others = allTemplates
+        .where((t) => t.tradeCategory.toLowerCase() != trade.toLowerCase())
+        .toList();
+
+    return _TradeTemplateSection(
+      trade: trade,
+      tradeEmoji: tradeEmoji,
+      matchedTemplates: matched,
+      otherTemplates: others,
     );
   }
 
@@ -552,36 +588,137 @@ class _JobQuickTile extends StatelessWidget {
   }
 }
 
-class _TemplateTile extends StatelessWidget {
+class _TemplateTile extends StatefulWidget {
   final ProjectTemplate template;
-  const _TemplateTile({required this.template});
+  final bool highlight;
+  const _TemplateTile({required this.template, this.highlight = false});
+
+  @override
+  State<_TemplateTile> createState() => _TemplateTileState();
+}
+
+class _TemplateTileState extends State<_TemplateTile> {
+  bool _expanded = false;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final t = widget.template;
+    final borderColor = widget.highlight
+        ? TRColors.gold.withValues(alpha: 0.5)
+        : TRColors.divider;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
       margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: TRColors.cardDark,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: TRColors.divider),
+        border: Border.all(color: borderColor, width: widget.highlight ? 1.5 : 1),
       ),
-      child: Row(children: [
-        Text(template.emoji, style: const TextStyle(fontSize: 24)),
-        const SizedBox(width: 12),
-        Expanded(child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(template.name, style: const TextStyle(
-              color: TRColors.white, fontSize: 14, fontWeight: FontWeight.w700,
-            )),
-            Text('${template.shots.length} required shots', style: const TextStyle(
-              color: TRColors.grayMid, fontSize: 12,
-            )),
+      child: Column(
+        children: [
+          // Header row — always visible
+          GestureDetector(
+            onTap: () => setState(() => _expanded = !_expanded),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Row(children: [
+                Text(t.emoji, style: const TextStyle(fontSize: 22)),
+                const SizedBox(width: 12),
+                Expanded(child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(t.name, style: const TextStyle(
+                      color: TRColors.white, fontSize: 14, fontWeight: FontWeight.w700,
+                    )),
+                    Text('${t.shots.length} required shots', style: const TextStyle(
+                      color: TRColors.grayMid, fontSize: 12,
+                    )),
+                  ],
+                )),
+                AnimatedRotation(
+                  turns: _expanded ? 0.25 : 0,
+                  duration: const Duration(milliseconds: 200),
+                  child: const Icon(Icons.chevron_right_rounded, color: TRColors.grayMid, size: 20),
+                ),
+              ]),
+            ),
+          ),
+
+          // Expanded shot list
+          if (_expanded) ...[
+            const Divider(color: TRColors.divider, height: 1),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Shot Checklist', style: TextStyle(
+                    color: TRColors.grayLight, fontSize: 11,
+                    fontWeight: FontWeight.w600, letterSpacing: 0.5,
+                  )),
+                  const SizedBox(height: 8),
+                  ...t.shots.map((shot) => _ShotRow(shot: shot)),
+                ],
+              ),
+            ),
           ],
-        )),
-        const Icon(Icons.chevron_right_rounded, color: TRColors.grayMid, size: 20),
-      ]),
+        ],
+      ),
+    );
+  }
+}
+
+class _ShotRow extends StatelessWidget {
+  final TemplateShot shot;
+  const _ShotRow({required this.shot});
+
+  static const _phaseColors = {
+    PhotoType.before:   TRColors.warning,
+    PhotoType.progress: TRColors.info,
+    PhotoType.after:    TRColors.success,
+  };
+  static const _phaseLabels = {
+    PhotoType.before:   'Before',
+    PhotoType.progress: 'Progress',
+    PhotoType.after:    'After',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _phaseColors[shot.phase] ?? TRColors.grayMid;
+    final label = _phaseLabels[shot.phase] ?? '';
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            margin: const EdgeInsets.only(top: 2),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(label, style: TextStyle(
+              color: color, fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 0.4,
+            )),
+          ),
+          const SizedBox(width: 8),
+          Expanded(child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(shot.name, style: const TextStyle(
+                color: TRColors.white, fontSize: 13, fontWeight: FontWeight.w600,
+              )),
+              const SizedBox(height: 1),
+              Text(shot.instruction, style: const TextStyle(
+                color: TRColors.grayMid, fontSize: 11, height: 1.4,
+              )),
+            ],
+          )),
+        ],
+      ),
     );
   }
 }
@@ -603,6 +740,131 @@ class _EmptyJobsHint extends StatelessWidget {
         SizedBox(width: 8),
         Expanded(child: Text('No active jobs. Mark a job as In Progress to link photos.',
           style: TextStyle(color: TRColors.grayMid, fontSize: 13))),
+      ]),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TRADE-AWARE TEMPLATE SECTION
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _TradeTemplateSection extends StatefulWidget {
+  final String trade;
+  final String tradeEmoji;
+  final List<ProjectTemplate> matchedTemplates;
+  final List<ProjectTemplate> otherTemplates;
+
+  const _TradeTemplateSection({
+    required this.trade,
+    required this.tradeEmoji,
+    required this.matchedTemplates,
+    required this.otherTemplates,
+  });
+
+  @override
+  State<_TradeTemplateSection> createState() => _TradeTemplateSectionState();
+}
+
+class _TradeTemplateSectionState extends State<_TradeTemplateSection> {
+  bool _showOthers = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ── Your Trade header ──────────────────────────────────────────────
+        Row(children: [
+          Text(widget.tradeEmoji, style: const TextStyle(fontSize: 18)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '${widget.trade} Templates',
+              style: const TextStyle(
+                color: TRColors.white, fontSize: 17, fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: TRColors.goldDim,
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text('YOUR TRADE', style: const TextStyle(
+              color: TRColors.gold, fontSize: 9, fontWeight: FontWeight.w800, letterSpacing: 0.6,
+            )),
+          ),
+        ]),
+        const SizedBox(height: 4),
+        const Text(
+          'These templates are pre-configured for your trade.',
+          style: TextStyle(color: TRColors.grayMid, fontSize: 12),
+        ),
+        const SizedBox(height: 12),
+
+        // Matched templates
+        if (widget.matchedTemplates.isEmpty)
+          _NoTradeTemplatesHint(trade: widget.trade)
+        else
+          ...widget.matchedTemplates.map((t) => _TemplateTile(template: t, highlight: true)),
+
+        // ── Other templates (collapsible) ──────────────────────────────────
+        if (widget.otherTemplates.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          GestureDetector(
+            onTap: () => setState(() => _showOthers = !_showOthers),
+            child: Row(children: [
+              const Expanded(child: Divider(color: TRColors.divider, thickness: 1)),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Row(children: [
+                  Text(
+                    _showOthers ? 'Hide other templates' : 'Browse other trade templates',
+                    style: const TextStyle(color: TRColors.grayMid, fontSize: 12),
+                  ),
+                  const SizedBox(width: 4),
+                  Icon(
+                    _showOthers ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+                    color: TRColors.grayMid, size: 16,
+                  ),
+                ]),
+              ),
+              const Expanded(child: Divider(color: TRColors.divider, thickness: 1)),
+            ]),
+          ),
+          if (_showOthers) ...[
+            const SizedBox(height: 12),
+            ...widget.otherTemplates.map((t) => _TemplateTile(template: t, highlight: false)),
+          ],
+        ],
+        const SizedBox(height: 8),
+      ],
+    );
+  }
+}
+
+class _NoTradeTemplatesHint extends StatelessWidget {
+  final String trade;
+  const _NoTradeTemplatesHint({required this.trade});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: TRColors.cardDark,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: TRColors.gold.withValues(alpha: 0.3)),
+      ),
+      child: Row(children: [
+        const Icon(Icons.auto_awesome_rounded, color: TRColors.gold, size: 16),
+        const SizedBox(width: 8),
+        Expanded(child: Text(
+          'Custom templates for $trade will appear here once configured by your admin.',
+          style: const TextStyle(color: TRColors.grayLight, fontSize: 13),
+        )),
       ]),
     );
   }

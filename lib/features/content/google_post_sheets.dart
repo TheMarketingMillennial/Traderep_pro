@@ -22,6 +22,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme/app_theme.dart';
 import '../../shared/models/models.dart';
 import '../../shared/services/app_state.dart';
+import '../../shared/services/ai_service.dart';
 import '../../shared/widgets/tr_widgets.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -75,7 +76,8 @@ class _CreatePostSheetState extends State<CreatePostSheet> {
   int? _beforeIdx;
   int? _afterIdx;
 
-  bool _saving = false;
+  bool _saving        = false;
+  bool _generatingAi  = false;
 
   @override
   void initState() {
@@ -131,6 +133,62 @@ class _CreatePostSheetState extends State<CreatePostSheet> {
     _captionCtrl.dispose();
     _hashtagCtrl.dispose();
     super.dispose();
+  }
+
+  /// Builds tone chip buttons: Professional | Friendly | Bold
+  List<Widget> _buildToneChips() {
+    return CaptionTone.values.map((tone) {
+      return Padding(
+        padding: const EdgeInsets.only(left: 6),
+        child: GestureDetector(
+          onTap: () => _regenerateWithAi(tone),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: TRColors.gold.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: TRColors.gold.withValues(alpha: 0.4)),
+            ),
+            child: Text(tone.label,
+              style: const TextStyle(
+                color: TRColors.gold, fontSize: 11, fontWeight: FontWeight.w600,
+              )),
+          ),
+        ),
+      );
+    }).toList();
+  }
+
+  /// Calls Railway /generate-caption and updates caption + hashtag fields.
+  Future<void> _regenerateWithAi(CaptionTone tone) async {
+    if (_generatingAi) return;
+    setState(() => _generatingAi = true);
+
+    final state   = context.read<AppState>();
+    final company = state.company;
+
+    final result = await AiService.generateCaption(
+      jobType:        widget.submission.jobName,
+      companyName:    company?.name ?? '',
+      trade:          company?.tradeCategory ?? '',
+      serviceArea:    company?.serviceArea ?? '',
+      jobDescription: widget.submission.crewNote ?? '',
+      tone:           tone,
+    );
+
+    if (!mounted) return;
+    setState(() => _generatingAi = false);
+
+    if (result != null) {
+      _captionCtrl.text  = result.caption;
+      _hashtagCtrl.text  = result.hashtags.join(' ');
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('AI unavailable — check Railway server has OPENAI_API_KEY set'),
+        backgroundColor: TRColors.warning,
+        behavior: SnackBarBehavior.floating,
+      ));
+    }
   }
 
   Future<void> _createDraft() async {
@@ -344,9 +402,24 @@ class _CreatePostSheetState extends State<CreatePostSheet> {
                       ),
                       const SizedBox(height: 20),
                     ],
+                    // ── AI Regenerate row ───────────────────────────────────
+                    Row(children: [
+                      const Icon(Icons.auto_awesome_rounded, color: TRColors.gold, size: 14),
+                      const SizedBox(width: 6),
+                      const Text('Regenerate with AI',
+                        style: TextStyle(color: TRColors.gold, fontSize: 12, fontWeight: FontWeight.w700)),
+                      const Spacer(),
+                      if (_generatingAi)
+                        const SizedBox(
+                          width: 16, height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: TRColors.gold),
+                        )
+                      else ..._buildToneChips(),
+                    ]),
+                    const SizedBox(height: 12),
                     // ── Caption editor ──────────────────────────────────────
                     _SectionLabel(
-                        label: 'Caption (auto-generated — edit freely)',
+                        label: 'Caption (AI-generated — edit freely)',
                         icon: Icons.edit_note_rounded),
                     const SizedBox(height: 8),
                     Container(

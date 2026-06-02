@@ -52,6 +52,13 @@ class AppConfig {
     'FIREBASE_DATABASE_URL', defaultValue: '',
   );
 
+  // ── AI Server URL ─────────────────────────────────────────────────────────
+  // All three server URLs point to the same Railway instance — split into
+  // separate dart-defines so they can be overridden independently if needed.
+  static const String aiServerUrl = String.fromEnvironment(
+    'AI_SERVER_URL', defaultValue: 'https://web-production-548f4.up.railway.app',
+  );
+
   // ── Server URLs ───────────────────────────────────────────────────────────
   static const String smsServerUrl = String.fromEnvironment(
     'SMS_SERVER_URL', defaultValue: 'https://web-production-548f4.up.railway.app',
@@ -82,9 +89,14 @@ class AppConfig {
 
   static bool _firebaseInitialized = false;
 
+  /// Captured exception from Firebase.initializeApp() if it failed.
+  /// Displayed in the UI to help diagnose initialization errors.
+  static String? firebaseInitError;
+
   /// Called by main() after a successful Firebase.initializeApp().
   static void markFirebaseInitialized() {
     _firebaseInitialized = true;
+    firebaseInitError = null; // clear any previous error
     debugPrint('[AppConfig] Firebase marked as initialized ✅');
   }
 
