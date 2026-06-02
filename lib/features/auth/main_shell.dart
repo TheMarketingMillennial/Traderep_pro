@@ -44,14 +44,23 @@ class _MainShellState extends State<MainShell> {
     final state = context.watch<AppState>();
 
     // ── Trial gate ──────────────────────────────────────────────────────────
-    // Block access when trial has expired and subscription is not active.
-    // Users with status == 'none' (never signed up) are also gated so they
-    // must pick a plan before using the app.
+    // Block access only after Firestore has loaded AND subscription is expired/cancelled.
+    // While firestoreReady == false the subscription default is 'none' — don't gate
+    // yet or brand new users get blocked before their trial record is written.
     final sub = state.subscription;
-    final isBlocked =
-        sub.status == SubscriptionStatus.none ||
+    final firestoreLoaded = state.firestoreReady;
+    final isBlocked = firestoreLoaded && (
         (sub.status == SubscriptionStatus.trial && sub.trialDaysRemaining <= 0) ||
-        sub.status == SubscriptionStatus.cancelled;
+        sub.status == SubscriptionStatus.cancelled
+    );
+
+    // Still loading — show spinner, not the gate
+    if (!firestoreLoaded && sub.status == SubscriptionStatus.none) {
+      return const Scaffold(
+        backgroundColor: TRColors.navyDeep,
+        body: Center(child: CircularProgressIndicator(color: TRColors.gold)),
+      );
+    }
 
     if (isBlocked) {
       return _TrialExpiredGate(subscription: sub);
@@ -250,9 +259,7 @@ class _TrialExpiredGate extends StatelessWidget {
               Text(
                 _isCancelled
                     ? 'Subscription Cancelled'
-                    : _isExpiredTrial
-                        ? 'Your Free Trial Has Ended'
-                        : 'Choose a Plan to Continue',
+                    : 'Your Free Trial Has Ended',
                 style: const TextStyle(
                   color: TRColors.white,
                   fontSize: 26,
@@ -267,9 +274,7 @@ class _TrialExpiredGate extends StatelessWidget {
               Text(
                 _isCancelled
                     ? 'Your TradeRep subscription has been cancelled. Reactivate to keep growing your reputation.'
-                    : _isExpiredTrial
-                        ? 'Your 14-day trial has expired. Choose a plan to continue using TradeRep and keep your jobs and reputation data.'
-                        : 'Start your free 14-day trial — no credit card required to begin.',
+                    : 'Your 14-day trial has ended. Pick a plan below — your jobs, photos, and data are all saved.',
                 style: const TextStyle(
                   color: TRColors.grayLight,
                   fontSize: 15,
@@ -328,9 +333,9 @@ class _TrialExpiredGate extends StatelessWidget {
                   ),
                   icon: const Icon(Icons.rocket_launch_rounded, size: 20),
                   label: Text(
-                    _isExpiredTrial || _isCancelled
-                        ? 'Reactivate — Choose a Plan'
-                        : 'Start Free Trial',
+                    _isCancelled
+                        ? 'Reactivate Subscription'
+                        : 'Choose a Plan to Continue',
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w800,

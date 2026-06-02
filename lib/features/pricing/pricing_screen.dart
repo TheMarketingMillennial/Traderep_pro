@@ -549,7 +549,7 @@ class _PricingScreenState extends State<PricingScreen>
         const TRLogo(size: 52, showTagline: true),
         const SizedBox(height: 24),
         GoldButton(
-          label: 'Start 14-Day Free Trial',
+          label: 'View Plans & Start Free Trial',
           icon: Icons.rocket_launch_rounded,
           onTap: () => _handlePlanAction(context, PricingPlan.growth, state),
         ),
@@ -569,10 +569,16 @@ class _PricingScreenState extends State<PricingScreen>
       context: context,
       backgroundColor: TRColors.cardDark,
       isScrollControlled: true,
+      useSafeArea: true,
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.75,
+      ),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (_) => _CheckoutSheet(plan: plan, state: state),
+      builder: (_) => SingleChildScrollView(
+        child: _CheckoutSheet(plan: plan, state: state),
+      ),
     );
   }
 }
@@ -635,8 +641,8 @@ class _PlanCTAButton extends StatelessWidget {
 
   String get _label {
     if (plan.tier == PlanTier.growth) return 'Start 14-Day Free Trial';
-    if (plan.tier == PlanTier.pro)    return 'Get Started — Pro';
-    return 'Get Started';
+    if (plan.tier == PlanTier.pro)    return 'Choose Pro Plan';
+    return 'Choose Starter Plan';
   }
 
   @override
