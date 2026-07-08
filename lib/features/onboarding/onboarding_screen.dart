@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_theme.dart';
 import '../../shared/services/app_state.dart';
+import '../../shared/services/gbp_auth_service.dart';
 import '../../shared/widgets/tr_widgets.dart';
 import '../../shared/models/models.dart';
 import '../auth/sign_in_screen.dart';
@@ -514,21 +514,43 @@ class _GoogleConnectPage extends StatefulWidget {
 class _GoogleConnectPageState extends State<_GoogleConnectPage> {
   bool _connecting = false;
   bool _connected = false;
+  String? _locationName;
 
-  void _connectGoogle() {
-    // Show the GBP setup sheet — user enters their Location ID
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: TRColors.cardDark,
-      isScrollControlled: true,
-      useSafeArea: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (_) => _GbpOnboardSheet(
-        state: context.read<AppState>(),
-        onConnected: () => setState(() => _connected = true),
-      ),
+  Future<void> _connectGoogle() async {
+    final state = context.read<AppState>();
+    final companyId = state.company?.id;
+    if (companyId == null || companyId.isEmpty) {
+      // Fallback — just continue onboarding, can connect later from dashboard
+      widget.onNext();
+      return;
+    }
+
+    setState(() => _connecting = true);
+
+    await GbpAuthService.instance.startOAuthFlow(
+      companyId: companyId,
+      onBrowserOpened: () {
+        // Browser is open — keep spinner
+        if (mounted) setState(() => _connecting = true);
+      },
+      onConnected: (result) {
+        if (!mounted) return;
+        state.connectGoogleViaOAuth(result);
+        setState(() {
+          _connecting   = false;
+          _connected    = true;
+          _locationName = result.locationName ?? result.locationId;
+        });
+      },
+      onError: (err) {
+        if (!mounted) return;
+        setState(() => _connecting = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Connection failed: $err'),
+          backgroundColor: TRColors.error,
+          behavior: SnackBarBehavior.floating,
+        ));
+      },
     );
   }
 
@@ -559,7 +581,9 @@ class _GoogleConnectPageState extends State<_GoogleConnectPage> {
           const SizedBox(height: 10),
           Text(
             _connected
-              ? 'TradeRep is now connected to your Google Business Profile. You can post projects and photos directly.'
+              ? _locationName != null
+                  ? 'Connected to "$_locationName". You can now post project photos and updates directly to Google.'
+                  : 'TradeRep is now connected to your Google Business Profile. You can post projects and photos directly.'
               : 'Connect your Google Business Profile to post project photos, updates, and manage your review link.',
             style: const TextStyle(color: TRColors.grayLight, fontSize: 15),
             textAlign: TextAlign.center,
@@ -585,9 +609,18 @@ class _GoogleConnectPageState extends State<_GoogleConnectPage> {
             ),
             const SizedBox(height: 24),
             _connecting
-              ? const SizedBox(height: 54, child: Center(child: CircularProgressIndicator(color: TRColors.gold)))
+              ? Container(
+                  height: 54,
+                  alignment: Alignment.center,
+                  child: Row(mainAxisAlignment: MainAxisAlignment.center, children: const [
+                    SizedBox(width: 20, height: 20,
+                      child: CircularProgressIndicator(color: TRColors.gold, strokeWidth: 2.5)),
+                    SizedBox(width: 12),
+                    Text('Waiting for Google…', style: TextStyle(color: TRColors.grayLight, fontSize: 14)),
+                  ]),
+                )
               : GoldButton(
-                  label: 'Sign in with Google',
+                  label: 'Connect with Google',
                   icon: Icons.login_rounded,
                   onTap: _connectGoogle,
                 ),
@@ -713,89 +746,5 @@ class _ReadyItem extends StatelessWidget {
 }
 
 
-// ─── GBP Onboarding Sheet ─────────────────────────────────────────────────────
-class _GbpOnboardSheet extends StatefulWidget {
-  final AppState state;
-  final VoidCallback onConnected;
-  const _GbpOnboardSheet({required this.state, required this.onConnected});
-
-  @override
-  State<_GbpOnboardSheet> createState() => _GbpOnboardSheetState();
-}
-
-class _GbpOnboardSheetState extends State<_GbpOnboardSheet> {
-  final _ctrl = TextEditingController();
-  bool _saving = false;
-
-  @override
-  void dispose() { _ctrl.dispose(); super.dispose(); }
-
-  Future<void> _save() async {
-    final id = _ctrl.text.trim();
-    if (id.isEmpty) return;
-    setState(() => _saving = true);
-    await widget.state.updateGbpLocationId(id);
-    widget.state.connectGoogle();
-    widget.onConnected();
-    if (mounted) Navigator.pop(context);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(
-        left: 24, right: 24, top: 20,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 32,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Center(child: Container(width: 40, height: 4,
-            decoration: BoxDecoration(color: TRColors.divider, borderRadius: BorderRadius.circular(2)))),
-          const SizedBox(height: 16),
-          const Text('Enter Your GBP Location ID',
-            style: TextStyle(color: TRColors.white, fontSize: 18, fontWeight: FontWeight.w800)),
-          const SizedBox(height: 8),
-          const Text('Find it in Google Business Profile → Settings → Advanced settings',
-            style: TextStyle(color: TRColors.grayLight, fontSize: 13), textAlign: TextAlign.center),
-          const SizedBox(height: 16),
-          GestureDetector(
-            onTap: () => launchUrl(Uri.parse('https://business.google.com'), mode: LaunchMode.externalApplication),
-            child: const Text('Open Google Business →', style: TextStyle(color: TRColors.gold, fontSize: 13, fontWeight: FontWeight.w600)),
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _ctrl,
-            style: const TextStyle(color: TRColors.white, fontSize: 13),
-            decoration: InputDecoration(
-              hintText: 'accounts/123456789/locations/987654321',
-              hintStyle: const TextStyle(color: TRColors.grayMid, fontSize: 12),
-              filled: true, fillColor: TRColors.cardMid,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: TRColors.divider)),
-              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: TRColors.divider)),
-              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: TRColors.gold, width: 1.5)),
-            ),
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity, height: 52,
-            child: ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: TRColors.gold, foregroundColor: TRColors.navyDeep,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)), elevation: 0),
-              onPressed: _saving ? null : _save,
-              child: _saving
-                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: TRColors.navyDeep, strokeWidth: 2.5))
-                : const Text('Connect', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
-            ),
-          ),
-          const SizedBox(height: 8),
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Skip for now', style: TextStyle(color: TRColors.grayMid)),
-          ),
-        ],
-      ),
-    );
-  }
-}
+// _GbpOnboardSheet removed — OAuth flow now handled directly in _GoogleConnectPageState
+// via GbpAuthService.startOAuthFlow() which opens the browser and polls for connection.

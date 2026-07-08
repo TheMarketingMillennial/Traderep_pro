@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_theme.dart';
 import '../../shared/services/app_state.dart';
+import '../../shared/services/gbp_auth_service.dart';
 import '../../shared/widgets/tr_widgets.dart';
 import '../../shared/models/models.dart';
 import '../pricing/trial_widgets.dart';
 import '../photos/photo_approval_screen.dart';
 import '../profile/profile_screen.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 class DashboardScreen extends StatelessWidget {
   final void Function(int)? onSwitchTab;
@@ -593,9 +593,10 @@ class _TeamMemberTile extends StatelessWidget {
 }
 
 
-// ─── GBP Connect Bottom Sheet ─────────────────────────────────────────────────
-// Guides the admin through entering their GBP Location ID and connecting their
-// Google Business Profile. Real OAuth is handled via browser redirect.
+// ─── GBP OAuth Connect Sheet ──────────────────────────────────────────────────
+// One-tap Google Sign-In. No Location ID hunting required.
+// Flow: tap button → browser opens Google consent → Railway callback stores
+// tokens → this sheet polls /gbp/status and updates UI when done.
 class _GbpConnectSheet extends StatefulWidget {
   final AppState state;
   const _GbpConnectSheet({required this.state});
@@ -604,34 +605,52 @@ class _GbpConnectSheet extends StatefulWidget {
   State<_GbpConnectSheet> createState() => _GbpConnectSheetState();
 }
 
+enum _GbpSheetState { idle, waiting, connected, error }
+
 class _GbpConnectSheetState extends State<_GbpConnectSheet> {
-  final _locationCtrl = TextEditingController();
-  bool _saving = false;
-  bool _saved = false;
+  _GbpSheetState _phase = _GbpSheetState.idle;
+  String? _locationName;
+  String? _errorMsg;
 
-  @override
-  void initState() {
-    super.initState();
-    // Pre-fill if already set
-    final existing = widget.state.company?.gbpLocationId ?? '';
-    if (existing.isNotEmpty) _locationCtrl.text = existing;
-  }
+  Future<void> _startOAuth() async {
+    final companyId = widget.state.company?.id;
+    if (companyId == null || companyId.isEmpty) {
+      setState(() {
+        _phase    = _GbpSheetState.error;
+        _errorMsg = 'Company not loaded. Please sign out and back in.';
+      });
+      return;
+    }
 
-  @override
-  void dispose() {
-    _locationCtrl.dispose();
-    super.dispose();
-  }
+    setState(() => _phase = _GbpSheetState.waiting);
 
-  Future<void> _save() async {
-    final id = _locationCtrl.text.trim();
-    if (id.isEmpty) return;
-    setState(() => _saving = true);
-    await widget.state.updateGbpLocationId(id);
-    widget.state.connectGoogle();
-    if (mounted) setState(() { _saving = false; _saved = true; });
-    await Future.delayed(const Duration(milliseconds: 800));
-    if (mounted) Navigator.pop(context);
+    await GbpAuthService.instance.startOAuthFlow(
+      companyId: companyId,
+      onBrowserOpened: () {
+        // Browser opened — keep showing the waiting spinner
+        if (mounted) setState(() => _phase = _GbpSheetState.waiting);
+      },
+      onConnected: (result) {
+        if (!mounted) return;
+        // Tell AppState — updates googleConnected + gbpLocationId in memory + Firestore
+        widget.state.connectGoogleViaOAuth(result);
+        setState(() {
+          _phase        = _GbpSheetState.connected;
+          _locationName = result.locationName ?? result.locationId;
+        });
+        // Auto-dismiss after success
+        Future.delayed(const Duration(seconds: 2), () {
+          if (mounted) Navigator.pop(context);
+        });
+      },
+      onError: (err) {
+        if (!mounted) return;
+        setState(() {
+          _phase    = _GbpSheetState.error;
+          _errorMsg = err;
+        });
+      },
+    );
   }
 
   @override
@@ -639,156 +658,199 @@ class _GbpConnectSheetState extends State<_GbpConnectSheet> {
     return Padding(
       padding: EdgeInsets.only(
         left: 24, right: 24, top: 20,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 32,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 36,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Handle bar
           Center(child: Container(
             width: 40, height: 4,
             decoration: BoxDecoration(color: TRColors.divider, borderRadius: BorderRadius.circular(2)),
           )),
-          const SizedBox(height: 20),
-          Row(children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: TRColors.gold.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(Icons.business_rounded, color: TRColors.gold, size: 22),
-            ),
-            const SizedBox(width: 12),
-            const Expanded(child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Connect Google Business Profile',
-                  style: TextStyle(color: TRColors.white, fontSize: 17, fontWeight: FontWeight.w800)),
-                Text('Paste your GBP Location ID below',
-                  style: TextStyle(color: TRColors.grayLight, fontSize: 12)),
-              ],
-            )),
-          ]),
-          const SizedBox(height: 20),
+          const SizedBox(height: 24),
 
-          // Step instructions
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: TRColors.cardMid,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: TRColors.divider),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('How to find your Location ID:',
-                  style: TextStyle(color: TRColors.white, fontSize: 13, fontWeight: FontWeight.w700)),
-                const SizedBox(height: 10),
-                _Step(n: '1', text: 'Go to your Google Business Profile'),
-                _Step(n: '2', text: 'Click the 3-dot menu → Business Profile Settings'),
-                _Step(n: '3', text: 'Scroll to "Advanced settings"'),
-                _Step(n: '4', text: 'Copy the Location ID (format: accounts/xxx/locations/xxx)'),
-                const SizedBox(height: 10),
-                GestureDetector(
-                  onTap: () => launchUrl(
-                    Uri.parse('https://business.google.com'),
-                    mode: LaunchMode.externalApplication,
+          // Icon
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            child: _phase == _GbpSheetState.connected
+              ? Container(
+                  key: const ValueKey('check'),
+                  width: 64, height: 64,
+                  decoration: BoxDecoration(
+                    color: TRColors.success.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: TRColors.success.withValues(alpha: 0.4)),
                   ),
-                  child: const Text('Open Google Business Profile →',
-                    style: TextStyle(color: TRColors.gold, fontSize: 13, fontWeight: FontWeight.w600)),
+                  child: const Icon(Icons.check_circle_rounded, color: TRColors.success, size: 36),
+                )
+              : Container(
+                  key: const ValueKey('gbp'),
+                  width: 64, height: 64,
+                  decoration: BoxDecoration(
+                    color: TRColors.gold.withValues(alpha: 0.10),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: TRColors.gold.withValues(alpha: 0.3)),
+                  ),
+                  child: const Icon(Icons.business_rounded, color: TRColors.gold, size: 32),
                 ),
-              ],
-            ),
           ),
           const SizedBox(height: 16),
 
-          // Location ID input
-          TextField(
-            controller: _locationCtrl,
-            style: const TextStyle(color: TRColors.white, fontSize: 14),
-            decoration: InputDecoration(
-              hintText: 'accounts/123456789/locations/987654321',
-              hintStyle: const TextStyle(color: TRColors.grayMid, fontSize: 13),
-              filled: true,
-              fillColor: TRColors.cardMid,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: TRColors.divider),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: TRColors.divider),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: TRColors.gold, width: 1.5),
-              ),
-              prefixIcon: const Icon(Icons.link_rounded, color: TRColors.grayMid, size: 18),
-            ),
+          // Title + subtitle
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 250),
+            child: _phase == _GbpSheetState.connected
+              ? Column(key: const ValueKey('done'), children: [
+                  const Text('Connected!', style: TextStyle(
+                    color: TRColors.success, fontSize: 20, fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 6),
+                  Text(
+                    _locationName != null
+                      ? 'Your profile "$_locationName" is now linked.'
+                      : 'Google Business Profile linked.',
+                    style: const TextStyle(color: TRColors.grayLight, fontSize: 14),
+                    textAlign: TextAlign.center,
+                  ),
+                ])
+              : Column(key: const ValueKey('title'), children: [
+                  const Text('Connect Google Business Profile', style: TextStyle(
+                    color: TRColors.white, fontSize: 18, fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Sign in with Google to link your Business Profile.\nNo technical steps — just one tap.',
+                    style: TextStyle(color: TRColors.grayLight, fontSize: 13),
+                    textAlign: TextAlign.center,
+                  ),
+                ]),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 24),
 
-          // Save button
-          SizedBox(
+          // What gets connected info card (idle only)
+          if (_phase == _GbpSheetState.idle) ...[
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: TRColors.cardMid,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: TRColors.divider),
+              ),
+              child: Column(
+                children: [
+                  _OAuthPermRow(Icons.photo_camera_rounded,   'Upload project photos to your listing'),
+                  const Divider(color: TRColors.divider, height: 16),
+                  _OAuthPermRow(Icons.post_add_rounded,       'Publish approved posts to Google'),
+                  const Divider(color: TRColors.divider, height: 16),
+                  _OAuthPermRow(Icons.star_rounded,           'Access your Google review link'),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+          ],
+
+          // Waiting state
+          if (_phase == _GbpSheetState.waiting) ...[
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: TRColors.cardMid,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: TRColors.gold.withValues(alpha: 0.3)),
+              ),
+              child: Row(children: [
+                const SizedBox(
+                  width: 20, height: 20,
+                  child: CircularProgressIndicator(
+                    color: TRColors.gold, strokeWidth: 2.5,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                const Expanded(child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Waiting for Google approval…', style: TextStyle(
+                      color: TRColors.gold, fontSize: 13, fontWeight: FontWeight.w700)),
+                    SizedBox(height: 3),
+                    Text('Complete sign-in in your browser, then return here.',
+                      style: TextStyle(color: TRColors.grayMid, fontSize: 12)),
+                  ],
+                )),
+              ]),
+            ),
+            const SizedBox(height: 20),
+          ],
+
+          // Error state
+          if (_phase == _GbpSheetState.error && _errorMsg != null) ...[
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: TRColors.error.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: TRColors.error.withValues(alpha: 0.3)),
+              ),
+              child: Row(children: [
+                const Icon(Icons.error_outline_rounded, color: TRColors.error, size: 20),
+                const SizedBox(width: 10),
+                Expanded(child: Text(_errorMsg!, style: const TextStyle(
+                  color: TRColors.error, fontSize: 13))),
+              ]),
+            ),
+            const SizedBox(height: 20),
+          ],
+
+          // Primary action button
+          if (_phase != _GbpSheetState.connected) SizedBox(
             width: double.infinity,
             height: 52,
-            child: ElevatedButton(
+            child: ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
-                backgroundColor: _saved ? TRColors.success : TRColors.gold,
+                backgroundColor: TRColors.gold,
                 foregroundColor: TRColors.navyDeep,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                 elevation: 0,
               ),
-              onPressed: _saving || _saved ? null : _save,
-              child: _saving
-                ? const SizedBox(width: 20, height: 20,
-                    child: CircularProgressIndicator(color: TRColors.navyDeep, strokeWidth: 2.5))
-                : Text(
-                    _saved ? 'Connected!' : 'Connect & Save',
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
-                  ),
+              onPressed: _phase == _GbpSheetState.waiting ? null : _startOAuth,
+              icon: _phase == _GbpSheetState.waiting
+                ? const SizedBox(
+                    width: 18, height: 18,
+                    child: CircularProgressIndicator(color: TRColors.navyDeep, strokeWidth: 2.5),
+                  )
+                : const Icon(Icons.login_rounded, size: 20),
+              label: Text(
+                _phase == _GbpSheetState.error
+                  ? 'Try Again'
+                  : _phase == _GbpSheetState.waiting
+                    ? 'Waiting for browser…'
+                    : 'Sign in with Google',
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+              ),
             ),
           ),
-          const SizedBox(height: 8),
-          Center(
-            child: TextButton(
+          const SizedBox(height: 10),
+          if (_phase != _GbpSheetState.connected)
+            Center(child: TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel', style: TextStyle(color: TRColors.grayMid)),
-            ),
-          ),
+              child: const Text('Cancel', style: TextStyle(color: TRColors.grayMid, fontSize: 14)),
+            )),
         ],
       ),
     );
   }
 }
 
-class _Step extends StatelessWidget {
-  final String n, text;
-  const _Step({required this.n, required this.text});
+class _OAuthPermRow extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  const _OAuthPermRow(this.icon, this.text);
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 20, height: 20,
-            margin: const EdgeInsets.only(right: 8, top: 1),
-            decoration: BoxDecoration(
-              color: TRColors.gold.withValues(alpha: 0.15),
-              shape: BoxShape.circle,
-            ),
-            child: Center(child: Text(n,
-              style: const TextStyle(color: TRColors.gold, fontSize: 11, fontWeight: FontWeight.w800))),
-          ),
-          Expanded(child: Text(text,
-            style: const TextStyle(color: TRColors.grayLight, fontSize: 13))),
-        ],
-      ),
-    );
+    return Row(children: [
+      Icon(icon, color: TRColors.gold, size: 16),
+      const SizedBox(width: 10),
+      Expanded(child: Text(text, style: const TextStyle(color: TRColors.grayLight, fontSize: 13))),
+      const Icon(Icons.check_rounded, color: TRColors.success, size: 16),
+    ]);
   }
 }

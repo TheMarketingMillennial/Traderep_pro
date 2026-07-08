@@ -68,6 +68,7 @@ app.get('/health', (req, res) => {
     mock_mode:         !twilioConfigured,  // Flutter SmsService reads this field
     messages_sent:     0,                  // Twilio doesn't expose a simple counter
     openai:            !!openai,
+    gbp_oauth:         !!(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET),
   });
 });
 
@@ -612,10 +613,10 @@ app.get('/sms/log', (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 app.post('/publish-google-post', async (req, res) => {
   try {
-    const { companyId, locationId, text, imageUrl } = req.body;
+    const { companyId, locationId: bodyLocationId, text, imageUrl } = req.body;
 
-    if (!locationId || !text) {
-      return res.status(400).json({ error: 'locationId and text are required' });
+    if (!text) {
+      return res.status(400).json({ error: 'text is required' });
     }
 
     // Retrieve company's GBP access token from Firestore
@@ -624,10 +625,22 @@ app.post('/publish-google-post', async (req, res) => {
     }
 
     const companyDoc = await db.collection('companies').doc(companyId).get();
-    const accessToken = companyDoc.data()?.gbp_access_token;
+    const companyData = companyDoc.data() || {};
+    let accessToken = companyData.gbp_access_token;
+
+    // Auto-refresh token if available
+    if (!accessToken && companyData.gbp_refresh_token) {
+      accessToken = await refreshGbpToken(companyId);
+    }
 
     if (!accessToken) {
       return res.status(401).json({ error: 'GBP not connected for this company' });
+    }
+
+    // Use locationId from body, or fall back to the one stored during OAuth
+    const locationId = bodyLocationId || companyData.gbp_location_id;
+    if (!locationId) {
+      return res.status(400).json({ error: 'No GBP location configured for this company' });
     }
 
     // Post to Google Business Profile API
@@ -665,6 +678,280 @@ app.post('/publish-google-post', async (req, res) => {
   } catch (err) {
     console.error('[GBP] publish error:', err.message);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GBP OAUTH — CONNECT GOOGLE BUSINESS PROFILE
+//
+// Two-step OAuth2 flow so users never have to touch a Location ID.
+//
+// STEP 1 — Flutter calls GET /gbp/auth-url?companyId=xxx
+//   • Server builds the Google OAuth consent URL with business.manage scope
+//   • Returns { authUrl } — Flutter opens this in the external browser
+//
+// STEP 2 — Google redirects to GET /gbp/callback?code=xxx&state=companyId
+//   • Server exchanges the code for access + refresh tokens
+//   • Fetches the user's GBP account + first location automatically
+//   • Stores gbp_access_token, gbp_refresh_token, gbp_location_id in Firestore
+//   • Redirects browser to a hosted success page (or deep-link back to app)
+//
+// Required Railway env vars:
+//   GOOGLE_CLIENT_ID      — OAuth2 Web App client ID from Google Cloud Console
+//   GOOGLE_CLIENT_SECRET  — OAuth2 client secret
+//   RAILWAY_PUBLIC_URL    — e.g. https://traderep-server-production.up.railway.app
+//                           Used to build the redirect_uri sent to Google.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const GOOGLE_CLIENT_ID     = process.env.GOOGLE_CLIENT_ID;
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+const RAILWAY_PUBLIC_URL   = (process.env.RAILWAY_PUBLIC_URL || 'https://traderep-server-production.up.railway.app').replace(/\/$/, '');
+const GBP_REDIRECT_URI     = `${RAILWAY_PUBLIC_URL}/gbp/callback`;
+const GBP_SCOPES           = [
+  'https://www.googleapis.com/auth/business.manage',
+  'https://www.googleapis.com/auth/userinfo.email',
+].join(' ');
+
+// ── STEP 1: Generate OAuth URL ────────────────────────────────────────────────
+// GET /gbp/auth-url?companyId=xxx
+// Returns: { authUrl: "https://accounts.google.com/o/oauth2/v2/auth?..." }
+app.get('/gbp/auth-url', (req, res) => {
+  const { companyId } = req.query;
+
+  if (!companyId) {
+    return res.status(400).json({ error: 'companyId is required' });
+  }
+  if (!GOOGLE_CLIENT_ID) {
+    return res.status(503).json({
+      error: 'Google OAuth not configured on server. Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to Railway env vars.',
+    });
+  }
+
+  const params = new URLSearchParams({
+    client_id:     GOOGLE_CLIENT_ID,
+    redirect_uri:  GBP_REDIRECT_URI,
+    response_type: 'code',
+    scope:         GBP_SCOPES,
+    access_type:   'offline',     // needed to get a refresh_token
+    prompt:        'consent',     // always show consent so we always get refresh_token
+    state:         companyId,     // passed back in callback so we know which company
+  });
+
+  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+  console.log(`[GBP OAuth] Auth URL generated for company: ${companyId}`);
+  res.json({ authUrl });
+});
+
+// ── STEP 2: OAuth Callback ────────────────────────────────────────────────────
+// GET /gbp/callback?code=xxx&state=companyId
+// Exchanges code → tokens, fetches first GBP location, stores in Firestore.
+app.get('/gbp/callback', async (req, res) => {
+  const { code, state: companyId, error: oauthError } = req.query;
+
+  // User denied access
+  if (oauthError) {
+    console.warn(`[GBP OAuth] User denied access: ${oauthError}`);
+    return res.send(`<!DOCTYPE html><html><head><title>Connection Cancelled</title>
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      <style>body{background:#0d1b2e;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}
+      .card{background:#1a2840;border-radius:16px;padding:32px;text-align:center;max-width:360px}
+      h2{color:#F7BE1A;margin-top:0}p{color:#a0b0c0}
+      </style></head><body><div class="card"><h2>⚠️ Connection Cancelled</h2>
+      <p>Google Business Profile was not connected. You can try again inside the app.</p>
+      <p style="margin-top:24px;font-size:12px;color:#5a6a7a">You can close this tab.</p>
+      </div></body></html>`);
+  }
+
+  if (!code || !companyId) {
+    return res.status(400).send('Missing code or state');
+  }
+  if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
+    return res.status(503).send('Google OAuth not configured on server');
+  }
+  if (!db) {
+    return res.status(503).send('Firebase not configured on server');
+  }
+
+  try {
+    // ── Exchange code for tokens ────────────────────────────────────────────
+    const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code,
+        client_id:     GOOGLE_CLIENT_ID,
+        client_secret: GOOGLE_CLIENT_SECRET,
+        redirect_uri:  GBP_REDIRECT_URI,
+        grant_type:    'authorization_code',
+      }).toString(),
+    });
+
+    const tokens = await tokenResponse.json();
+    if (!tokenResponse.ok || !tokens.access_token) {
+      console.error('[GBP OAuth] Token exchange failed:', tokens);
+      throw new Error(tokens.error_description || 'Token exchange failed');
+    }
+
+    const { access_token, refresh_token } = tokens;
+    console.log(`[GBP OAuth] Tokens received for company: ${companyId} | has_refresh: ${!!refresh_token}`);
+
+    // ── Fetch user's GBP accounts ──────────────────────────────────────────
+    let locationId  = null;
+    let accountName = null;
+    let locationDisplayName = null;
+
+    try {
+      // List accounts
+      const accountsRes = await fetch(
+        'https://mybusinessaccountmanagement.googleapis.com/v1/accounts',
+        { headers: { Authorization: `Bearer ${access_token}` } }
+      );
+      const accountsData = await accountsRes.json();
+      const accounts = accountsData.accounts || [];
+
+      if (accounts.length > 0) {
+        accountName = accounts[0].name; // e.g. "accounts/12345678"
+
+        // List locations under the first account
+        const locRes = await fetch(
+          `https://mybusinessbusinessinformation.googleapis.com/v1/${accountName}/locations?readMask=name,title`,
+          { headers: { Authorization: `Bearer ${access_token}` } }
+        );
+        const locData = await locRes.json();
+        const locations = locData.locations || [];
+
+        if (locations.length > 0) {
+          // Use the first location — most businesses have one
+          locationId = locations[0].name; // e.g. "locations/12345678"
+          locationDisplayName = locations[0].title || '';
+          // GBP post API needs "accounts/xxx/locations/yyy" format
+          if (locationId && accountName && !locationId.startsWith('accounts/')) {
+            locationId = `${accountName}/${locationId}`;
+          }
+          console.log(`[GBP OAuth] Found location: ${locationId} ("${locationDisplayName}")`);
+        } else {
+          console.warn(`[GBP OAuth] No locations found under account: ${accountName}`);
+        }
+      } else {
+        console.warn('[GBP OAuth] No GBP accounts found for this Google user');
+      }
+    } catch (locationErr) {
+      // Non-fatal — tokens are still good, we just couldn't auto-detect location
+      console.warn('[GBP OAuth] Location fetch failed (non-fatal):', locationErr.message);
+    }
+
+    // ── Save tokens + locationId to Firestore ─────────────────────────────
+    const updateData = {
+      gbp_access_token:   access_token,
+      gbp_connected:      true,
+      gbp_connected_at:   admin.firestore.FieldValue.serverTimestamp(),
+    };
+    if (refresh_token) updateData.gbp_refresh_token = refresh_token;
+    if (locationId)    updateData.gbp_location_id   = locationId;
+    if (locationDisplayName) updateData.gbp_location_name = locationDisplayName;
+
+    await db.collection('companies').doc(companyId).set(updateData, { merge: true });
+    console.log(`[GBP OAuth] ✅ Company ${companyId} connected — location: ${locationId || 'not found'}`);
+
+    // ── Success HTML page ──────────────────────────────────────────────────
+    const locationLine = locationId
+      ? `<p style="color:#a0b0c0;font-size:13px">Connected to: <strong style="color:#F7BE1A">${locationDisplayName || locationId}</strong></p>`
+      : `<p style="color:#a0b0c0;font-size:13px">No Business Profile location found on this account.<br>You can set it manually inside the app.</p>`;
+
+    return res.send(`<!DOCTYPE html><html><head><title>Google Business Connected</title>
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      <style>
+        body{background:#0d1b2e;color:#fff;font-family:sans-serif;display:flex;align-items:center;
+             justify-content:center;min-height:100vh;margin:0;padding:20px;box-sizing:border-box}
+        .card{background:#1a2840;border:1px solid #2a3850;border-radius:16px;padding:36px 28px;
+              text-align:center;max-width:380px;width:100%}
+        .check{width:64px;height:64px;background:#1a3a20;border-radius:50%;display:flex;
+               align-items:center;justify-content:center;margin:0 auto 20px;font-size:30px}
+        h2{color:#F7BE1A;margin:0 0 8px;font-size:22px}
+        .note{margin-top:28px;padding:12px;background:#0d1b2e;border-radius:10px;
+              font-size:12px;color:#5a6a7a}
+      </style></head>
+      <body><div class="card">
+        <div class="check">✅</div>
+        <h2>Google Business Connected!</h2>
+        ${locationLine}
+        <div class="note">You can close this tab and return to the TradeRep app.</div>
+      </div></body></html>`);
+
+  } catch (err) {
+    console.error('[GBP OAuth] Callback error:', err.message);
+    return res.send(`<!DOCTYPE html><html><head><title>Connection Failed</title>
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      <style>body{background:#0d1b2e;color:#fff;font-family:sans-serif;display:flex;align-items:center;
+             justify-content:center;min-height:100vh;margin:0}
+      .card{background:#1a2840;border-radius:16px;padding:32px;text-align:center;max-width:360px}
+      h2{color:#e05555;margin-top:0}p{color:#a0b0c0}code{color:#F7BE1A;font-size:11px}
+      </style></head><body><div class="card"><h2>❌ Connection Failed</h2>
+      <p>${err.message}</p>
+      <p>Please return to the TradeRep app and try again.</p>
+      </div></body></html>`);
+  }
+});
+
+// ── Token refresh helper (internal — called by /publish-google-post) ──────────
+// Automatically refreshes an expired access_token using the stored refresh_token.
+async function refreshGbpToken(companyId) {
+  if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) return null;
+  if (!db) return null;
+
+  try {
+    const doc = await db.collection('companies').doc(companyId).get();
+    const refreshToken = doc.data()?.gbp_refresh_token;
+    if (!refreshToken) return null;
+
+    const res = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id:     GOOGLE_CLIENT_ID,
+        client_secret: GOOGLE_CLIENT_SECRET,
+        refresh_token: refreshToken,
+        grant_type:    'refresh_token',
+      }).toString(),
+    });
+
+    const data = await res.json();
+    if (!res.ok || !data.access_token) {
+      console.warn('[GBP OAuth] Token refresh failed:', data.error);
+      return null;
+    }
+
+    // Store updated access_token
+    await db.collection('companies').doc(companyId).update({
+      gbp_access_token: data.access_token,
+    });
+    console.log(`[GBP OAuth] Token refreshed for company: ${companyId}`);
+    return data.access_token;
+
+  } catch (e) {
+    console.error('[GBP OAuth] refreshGbpToken error:', e.message);
+    return null;
+  }
+}
+
+// ── GBP OAuth status check ────────────────────────────────────────────────────
+// GET /gbp/status?companyId=xxx
+// Returns current connection state so Flutter can poll after redirect.
+app.get('/gbp/status', async (req, res) => {
+  const { companyId } = req.query;
+  if (!companyId || !db) return res.json({ connected: false });
+
+  try {
+    const doc = await db.collection('companies').doc(companyId).get();
+    const data = doc.data() || {};
+    res.json({
+      connected:     !!data.gbp_connected,
+      location_id:   data.gbp_location_id   || null,
+      location_name: data.gbp_location_name || null,
+      oauth_enabled: !!(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET),
+    });
+  } catch (e) {
+    res.json({ connected: false, error: e.message });
   }
 });
 

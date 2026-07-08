@@ -12,6 +12,7 @@ import 'firestore_service.dart';
 import 'auth_service.dart';
 import 'sms_service.dart';
 import 'gbp_service.dart';
+import 'gbp_auth_service.dart';
 import 'ai_service.dart';
 
 class AppState extends ChangeNotifier {
@@ -642,6 +643,40 @@ class AppState extends ChangeNotifier {
     _fs.updateGoogleConnected(true).catchError((e) {
       if (kDebugMode) debugPrint('connectGoogle Firestore error: $e');
     });
+  }
+
+  /// Marks GBP as connected and optionally stores the OAuth-detected locationId.
+  /// Called by [GbpAuthService] polling callback after successful OAuth.
+  void connectGoogleViaOAuth(GbpAuthResult result) {
+    _googleConnected = true;
+    // Store location in company object if we got one from OAuth
+    if (result.locationId != null && _company != null) {
+      _company = Company(
+        id:                _company!.id,
+        name:              _company!.name,
+        logoUrl:           _company!.logoUrl,
+        tradeCategory:     _company!.tradeCategory,
+        serviceArea:       _company!.serviceArea,
+        phone:             _company!.phone,
+        website:           _company!.website,
+        teamSize:          _company!.teamSize,
+        googleConnected:   true,
+        googleBusinessId:  _company!.googleBusinessId,
+        googleReviewLink:  _company!.googleReviewLink,
+        gbpLocationId:     result.locationId,
+        createdAt:         _company!.createdAt,
+      );
+    }
+    notifyListeners();
+    // Persist to Firestore
+    _fs.updateGoogleConnected(true).catchError((e) {
+      if (kDebugMode) debugPrint('connectGoogleViaOAuth Firestore error: $e');
+    });
+    if (result.locationId != null) {
+      _fs.updateGbpLocationId(result.locationId).catchError((e) {
+        if (kDebugMode) debugPrint('connectGoogleViaOAuth updateGbpLocationId error: $e');
+      });
+    }
   }
 
   /// Persists the GBP location resource name for this company.
