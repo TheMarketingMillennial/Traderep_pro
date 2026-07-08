@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme/app_theme.dart';
 import '../../shared/services/app_state.dart';
+import '../../shared/services/gbp_auth_service.dart';
 import '../../shared/widgets/tr_widgets.dart';
 import '../../shared/models/models.dart';
 import '../pricing/trial_widgets.dart';
@@ -166,15 +167,15 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
-  void _showGbpLocationSheet(
-      BuildContext context, AppState state, Company company) {
+  void _showGbpOAuthSheet(BuildContext context, AppState state) {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
+      useSafeArea: true,
       builder: (_) => ChangeNotifierProvider.value(
         value: state,
-        child: _GbpLocationSheet(current: company.gbpLocationId),
+        child: _GbpOAuthSheet(state: state),
       ),
     );
   }
@@ -198,22 +199,13 @@ class ProfileScreen extends StatelessWidget {
           _SettingsTile(
             icon: Icons.business_rounded,
             title: 'Google Business Profile',
-            subtitle: state.googleConnected ? 'Connected — Tap to manage' : 'Not connected — Tap to connect',
+            subtitle: state.googleConnected
+                ? (company.gbpLocationId != null && company.gbpLocationId!.isNotEmpty
+                    ? 'Connected — tap to reconnect'
+                    : 'Connected — tap to manage')
+                : 'Not connected — tap to connect with Google',
             statusColor: state.googleConnected ? TRColors.success : TRColors.error,
-            onTap: () {
-              if (!state.googleConnected) state.connectGoogle();
-            },
-          ),
-          _SettingsTile(
-            icon: Icons.location_on_rounded,
-            title: 'GBP Location ID',
-            subtitle: (company.gbpLocationId != null && company.gbpLocationId!.isNotEmpty)
-                ? company.gbpLocationId!
-                : 'Not set — tap to enable one-tap publishing',
-            statusColor: (company.gbpLocationId != null && company.gbpLocationId!.isNotEmpty)
-                ? TRColors.success
-                : TRColors.warning,
-            onTap: () => _showGbpLocationSheet(context, state, company),
+            onTap: () => _showGbpOAuthSheet(context, state),
           ),
           _SettingsTile(
             icon: Icons.photo_library_rounded,
@@ -1208,203 +1200,203 @@ class _SheetField extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GBP LOCATION ID EDIT SHEET
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── GBP OAuth Sheet (Profile) ───────────────────────────────────────────────
+// Replaces the old Location ID edit sheet with a one-tap Google Sign-In flow.
+// No text fields, no technical IDs — user just taps "Sign in with Google".
 
-class _GbpLocationSheet extends StatefulWidget {
-  final String? current;
-  const _GbpLocationSheet({this.current});
+class _GbpOAuthSheet extends StatefulWidget {
+  final AppState state;
+  const _GbpOAuthSheet({required this.state});
 
   @override
-  State<_GbpLocationSheet> createState() => _GbpLocationSheetState();
+  State<_GbpOAuthSheet> createState() => _GbpOAuthSheetState();
 }
 
-class _GbpLocationSheetState extends State<_GbpLocationSheet> {
-  late TextEditingController _ctrl;
-  bool _saving = false;
+enum _ProfileGbpPhase { idle, waiting, connected, error }
+
+class _GbpOAuthSheetState extends State<_GbpOAuthSheet> {
+  _ProfileGbpPhase _phase = _ProfileGbpPhase.idle;
+  String? _locationName;
+  String? _errorMsg;
 
   @override
   void initState() {
     super.initState();
-    _ctrl = TextEditingController(text: widget.current ?? '');
+    if (widget.state.googleConnected) {
+      _phase        = _ProfileGbpPhase.connected;
+      _locationName = widget.state.company?.gbpLocationId;
+    }
   }
 
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _save() async {
-    final value = _ctrl.text.trim();
-    // Basic format check: must start with 'accounts/' if non-empty
-    if (value.isNotEmpty && !value.startsWith('accounts/')) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text(
-            'Format must be: accounts/123456789/locations/987654321'),
-        backgroundColor: TRColors.error,
-      ));
+  Future<void> _startOAuth() async {
+    final companyId = widget.state.company?.id;
+    if (companyId == null || companyId.isEmpty) {
+      setState(() {
+        _phase    = _ProfileGbpPhase.error;
+        _errorMsg = 'Company not loaded. Please sign out and back in.';
+      });
       return;
     }
-    setState(() => _saving = true);
-    await context.read<AppState>().updateGbpLocationId(
-          value.isEmpty ? null : value,
-        );
-    if (mounted) {
-      Navigator.of(context).pop();
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Row(children: [
-          const Icon(Icons.check_circle_rounded,
-              color: TRColors.success, size: 18),
-          const SizedBox(width: 10),
-          Text(value.isEmpty
-              ? 'GBP Location ID cleared.'
-              : 'GBP Location ID saved!'),
-        ]),
-        backgroundColor: TRColors.cardDark,
-      ));
-    }
+
+    setState(() => _phase = _ProfileGbpPhase.waiting);
+
+    await GbpAuthService.instance.startOAuthFlow(
+      companyId: companyId,
+      onBrowserOpened: () {
+        if (mounted) setState(() => _phase = _ProfileGbpPhase.waiting);
+      },
+      onConnected: (result) {
+        if (!mounted) return;
+        widget.state.connectGoogleViaOAuth(result);
+        setState(() {
+          _phase        = _ProfileGbpPhase.connected;
+          _locationName = result.locationName ?? result.locationId;
+        });
+        Future.delayed(const Duration(seconds: 2), () {
+          if (mounted) Navigator.pop(context);
+        });
+      },
+      onError: (err) {
+        if (!mounted) return;
+        setState(() {
+          _phase    = _ProfileGbpPhase.error;
+          _errorMsg = err;
+        });
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding:
-          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-      child: Container(
-        decoration: const BoxDecoration(
-          color: TRColors.navyMid,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          border:
-              Border(top: BorderSide(color: TRColors.goldDark, width: 1.5)),
-        ),
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Drag handle
-            Center(
-              child: Container(
-                width: 40, height: 4,
-                decoration: BoxDecoration(
-                  color: TRColors.grayMid.withValues(alpha: 0.4),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
+    return Container(
+      decoration: const BoxDecoration(
+        color: TRColors.navyMid,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        border: Border(top: BorderSide(color: TRColors.goldDark, width: 1.5)),
+      ),
+      padding: EdgeInsets.fromLTRB(
+        20, 16, 20,
+        MediaQuery.of(context).viewInsets.bottom + 32,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Center(child: Container(
+            width: 40, height: 4,
+            decoration: BoxDecoration(
+              color: TRColors.grayMid.withValues(alpha: 0.4),
+              borderRadius: BorderRadius.circular(2),
             ),
-            const SizedBox(height: 16),
-            // Header
-            Row(children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF4285F4).withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(10),
+          )),
+          const SizedBox(height: 20),
+
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            child: _phase == _ProfileGbpPhase.connected
+              ? Container(
+                  key: const ValueKey('check'),
+                  width: 56, height: 56,
+                  decoration: BoxDecoration(
+                    color: TRColors.success.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.check_circle_rounded,
+                      color: TRColors.success, size: 32),
+                )
+              : Container(
+                  key: const ValueKey('gbp'),
+                  width: 56, height: 56,
+                  decoration: BoxDecoration(
+                    color: TRColors.gold.withValues(alpha: 0.10),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.business_rounded,
+                      color: TRColors.gold, size: 28),
                 ),
-                child: const Icon(Icons.location_on_rounded,
-                    color: Color(0xFF4285F4), size: 20),
-              ),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('GBP Location ID',
-                        style: TextStyle(
-                            color: TRColors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700)),
-                    Text('Enables one-tap publishing to Google Business',
-                        style: TextStyle(
-                            color: TRColors.grayMid, fontSize: 12)),
-                  ],
-                ),
-              ),
-            ]),
-            const SizedBox(height: 20),
-            // How-to card
+          ),
+          const SizedBox(height: 14),
+
+          Text(
+            _phase == _ProfileGbpPhase.connected
+              ? 'Google Business Connected'
+              : 'Connect Google Business Profile',
+            style: TextStyle(
+              color: _phase == _ProfileGbpPhase.connected
+                  ? TRColors.success : TRColors.white,
+              fontSize: 17, fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            _phase == _ProfileGbpPhase.connected
+              ? (_locationName != null
+                  ? 'Profile "$_locationName" is linked.'
+                  : 'Your Google Business Profile is linked.')
+              : 'One tap — no technical steps required.',
+            style: const TextStyle(color: TRColors.grayMid, fontSize: 13),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 20),
+
+          if (_phase == _ProfileGbpPhase.waiting)
             Container(
+              margin: const EdgeInsets.only(bottom: 16),
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: const Color(0xFF4285F4).withValues(alpha: 0.06),
+                color: TRColors.gold.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                    color: const Color(0xFF4285F4).withValues(alpha: 0.2)),
+                border: Border.all(color: TRColors.gold.withValues(alpha: 0.25)),
               ),
-              child: const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('How to find your Location ID:',
-                      style: TextStyle(
-                          color: Color(0xFF4285F4),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600)),
-                  SizedBox(height: 8),
-                  Text(
-                    '1. Go to Google Cloud Console → APIs & Services\n'
-                    '2. Enable "My Business Business Information API"\n'
-                    '3. Call: GET https://mybusinessbusinessinformation.googleapis.com/v1/accounts\n'
-                    '4. Then: GET .../accounts/{id}/locations\n'
-                    '5. Copy the "name" field, e.g. accounts/123/locations/456\n\n'
-                    'Or check your GBP dashboard URL — the numbers after /locations/ is your location ID.',
-                    style: TextStyle(
-                        color: TRColors.grayMid,
-                        fontSize: 12,
-                        height: 1.5),
-                  ),
-                ],
-              ),
+              child: Row(children: const [
+                SizedBox(width: 18, height: 18,
+                  child: CircularProgressIndicator(
+                      color: TRColors.gold, strokeWidth: 2.5)),
+                SizedBox(width: 12),
+                Expanded(child: Text(
+                  'Waiting for Google approval…\nComplete sign-in in your browser, then return here.',
+                  style: TextStyle(color: TRColors.gold, fontSize: 12, height: 1.4),
+                )),
+              ]),
             ),
-            const SizedBox(height: 16),
-            // Input
+
+          if (_phase == _ProfileGbpPhase.error && _errorMsg != null)
             Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: TRColors.navyDark,
+                color: TRColors.error.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                    color: TRColors.navyLight.withValues(alpha: 0.6)),
+                border: Border.all(color: TRColors.error.withValues(alpha: 0.3)),
               ),
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 14, vertical: 4),
-              child: TextField(
-                controller: _ctrl,
-                style: const TextStyle(
-                    color: TRColors.white,
-                    fontSize: 14,
-                    fontFamily: 'monospace'),
-                decoration: const InputDecoration(
-                  border: InputBorder.none,
-                  hintText: 'accounts/123456789/locations/987654321',
-                  hintStyle:
-                      TextStyle(color: TRColors.grayMid, fontSize: 13),
-                ),
-              ),
+              child: Row(children: [
+                const Icon(Icons.error_outline_rounded,
+                    color: TRColors.error, size: 18),
+                const SizedBox(width: 8),
+                Expanded(child: Text(_errorMsg!,
+                    style: const TextStyle(color: TRColors.error, fontSize: 12))),
+              ]),
             ),
-            const SizedBox(height: 20),
-            // Save button
+
+          if (_phase != _ProfileGbpPhase.connected)
             GoldButton(
-              label: _saving ? 'Saving…' : 'Save Location ID',
-              icon: Icons.save_rounded,
-              onTap: _saving ? null : _save,
+              label: _phase == _ProfileGbpPhase.waiting
+                  ? 'Waiting for browser…'
+                  : _phase == _ProfileGbpPhase.error
+                      ? 'Try Again'
+                      : 'Sign in with Google',
+              icon: _phase == _ProfileGbpPhase.waiting
+                  ? Icons.hourglass_empty_rounded
+                  : Icons.login_rounded,
+              onTap: _phase == _ProfileGbpPhase.waiting ? null : _startOAuth,
             ),
-            const SizedBox(height: 8),
-            // Clear link
-            if (widget.current != null && widget.current!.isNotEmpty)
-              Center(
-                child: TextButton(
-                  onPressed: () {
-                    _ctrl.clear();
-                    _save();
-                  },
-                  child: const Text('Clear Location ID',
-                      style: TextStyle(
-                          color: TRColors.error, fontSize: 13)),
-                ),
-              ),
-          ],
-        ),
+          const SizedBox(height: 8),
+          if (_phase != _ProfileGbpPhase.connected)
+            Center(child: TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel',
+                  style: TextStyle(color: TRColors.grayMid, fontSize: 13)),
+            )),
+        ],
       ),
     );
   }
