@@ -1,11 +1,11 @@
 {
-    "name": "traderep",
-    "short_name": "traderep",
+    "name": "TradeRep Pro",
+    "short_name": "TradeRep",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#0D1B2E",
+    "theme_color": "#F7BE1A",
+    "description": "Turn completed jobs into online credibility. AI-powered photo documentation, Google reviews, and Business Profile posting for trade contractors.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

@@ -67,5 +67,5 @@ android/*.keystore
 .env.local
 .env.*.local
 
-# Build-time config scripts (may contain injected secrets)
-scripts/build_with_secrets.sh
+# Local environment files with injected secrets (never commit)
+# scripts/build_with_secrets.sh is committed — it reads from .env, not hardcoded values

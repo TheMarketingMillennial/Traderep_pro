@@ -2,34 +2,35 @@
 // gbp_service.dart — TradeRep Pro
 //
 // Flutter-side HTTP client that talks to the /gbp/* routes on the Railway
-// backend (sms_server.py). All GBP OAuth credentials (client_id,
-// client_secret, refresh_token) stay on the server — Flutter never sees them.
+// backend (server.js). All GBP OAuth credentials (client_id, client_secret,
+// access_token, refresh_token) stay on the server — Flutter never sees them.
 //
 // ─── How it works ────────────────────────────────────────────────────────────
 //
-//  1. Admin sets gbpLocationId on their company record in Firestore
-//     (via Profile → Google Business Profile settings tile).
+//  1. Admin taps "Connect with Google" → GbpAuthService opens OAuth consent in
+//     browser → Railway /gbp/callback stores tokens + locationId in Firestore.
 //
 //  2. When admin taps "Publish to Google Business Profile" in PublishSheet,
 //     Flutter calls GbpService.instance.publishPost(...).
 //
-//  3. GbpService POSTs to /gbp/publish on the Railway server.
+//  3. GbpService POSTs to /publish-google-post on the Railway server,
+//     passing companyId + post content.
 //
-//  4. The Railway server refreshes the OAuth access token using the stored
-//     refresh token, then calls the GBP My Business Posts API to create a
-//     localPost. The access token is used once and discarded.
+//  4. Railway reads the stored access_token from Firestore (auto-refreshing
+//     via refresh_token if expired), then calls the GBP Posts API.
 //
 //  5. On success, AppState marks the ContentPost as ContentStatus.published
 //     in Firestore and returns the GBP post name (resource ID) to the caller.
 //
 // ─── Configuration ────────────────────────────────────────────────────────────
-//   --dart-define=GBP_SERVER_URL=https://your-app.up.railway.app
-//   Defaults to http://localhost:5061 for local dev (same as SMS server).
+//   --dart-define=GBP_SERVER_URL=https://traderep-server-production.up.railway.app
+//   Defaults to the production Railway URL (app_config.dart).
+//   No localhost fallback — all environments use the live Railway backend.
 //
 // ─── Degradation ─────────────────────────────────────────────────────────────
 //   If the server is unreachable, returns GbpResult.failure with
 //   error_code='SERVER_UNREACHABLE' — caller shows manual fallback UI.
-//   If GBP credentials aren't configured yet, returns GBP_NOT_CONFIGURED.
+//   If GBP OAuth is not yet configured, returns GBP_NOT_CONFIGURED.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import 'dart:convert';
