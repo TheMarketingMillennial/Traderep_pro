@@ -39,10 +39,37 @@ try {
 // ── Express setup ─────────────────────────────────────────────────────────────
 const app = express();
 
+// ── CORS — origin-locked to production app ────────────────────────────────────
+// Explicitly allow the Netlify production domain and the Railway server itself.
+// ALLOWED_ORIGINS env var lets you add preview/staging domains without code
+// changes (comma-separated: https://preview.netlify.app,https://staging.example.com).
+const PRODUCTION_ORIGINS = [
+  'https://app.tradereppro.com',
+  'https://traderep-server-production.up.railway.app',
+];
+const extraOrigins = (process.env.ALLOWED_ORIGINS || '')
+  .split(',')
+  .map(o => o.trim())
+  .filter(Boolean);
+const ALLOWED_ORIGINS = new Set([...PRODUCTION_ORIGINS, ...extraOrigins]);
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, Postman, server-to-server)
+    if (!origin) return callback(null, true);
+    if (ALLOWED_ORIGINS.has(origin)) return callback(null, true);
+    // In development (NODE_ENV !== 'production') allow all origins
+    if (process.env.NODE_ENV !== 'production') return callback(null, true);
+    callback(new Error(`CORS: origin '${origin}' not allowed`));
+  },
+  credentials: true,
+  optionsSuccessStatus: 200,
+};
+
 // IMPORTANT: raw body required for Stripe webhook signature verification.
 // Must be registered BEFORE express.json() middleware.
 app.use('/stripe-webhook', express.raw({ type: 'application/json' }));
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // ── Price ID map ──────────────────────────────────────────────────────────────

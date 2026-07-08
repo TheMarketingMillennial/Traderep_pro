@@ -17,8 +17,8 @@ class SmsService {
   static final SmsService instance = SmsService._();
 
   // ── Server URL ──────────────────────────────────────────────────────────────
-  // Reads from --dart-define=SMS_SERVER_URL=https://your-app.up.railway.app
-  // Defaults to Railway production URL. See app_config.dart for details.
+  // Reads from --dart-define=SMS_SERVER_URL (set in scripts/build_with_secrets.sh).
+  // Defaults to the production Railway URL. See app_config.dart for details.
   static String get _baseUrl => AppConfig.smsServerUrl;
 
   // Timeout for individual SMS send requests

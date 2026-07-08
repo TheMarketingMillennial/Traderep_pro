@@ -13,9 +13,6 @@ dependencies:
   # State Management
   provider: 6.1.5+1
 
-  # Navigation
-  go_router: ^14.6.3
-
   # Local Storage
   shared_preferences: 2.5.3
   hive: 2.2.3

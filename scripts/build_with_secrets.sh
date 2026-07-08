@@ -64,7 +64,10 @@ TARGET="${1:-web}"
 case "$TARGET" in
   web)
     echo "🔨  Building Flutter web (release) → app.tradereppro.com"
-    flutter build web --release "${DEFINES[@]}"
+    # --base-href / is required for Netlify deployment at the domain root.
+    # Without it Flutter embeds a relative base href that breaks asset loading
+    # when served from https://app.tradereppro.com/ (the CDN root).
+    flutter build web --release --base-href / "${DEFINES[@]}"
     echo "✅  Build complete: build/web/"
     ;;
   apk)

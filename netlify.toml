@@ -1,0 +1,84 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# netlify.toml — TradeRep Pro
+#
+# Netlify deployment configuration for app.tradereppro.com
+#
+# CRITICAL: The [[redirects]] rule below is required for Flutter Web SPA
+# routing. Without it, every direct URL or page refresh hits Netlify's CDN
+# which returns a 404 because the physical file doesn't exist — Flutter
+# handles all routing client-side from index.html.
+# ─────────────────────────────────────────────────────────────────────────────
+
+[build]
+  # Directory containing the built Flutter web output.
+  # Run: flutter build web --release (from project root) before deploying.
+  publish = "build/web"
+
+  # Optional: Netlify can run this automatically on push.
+  # Requires all environment variables below to be set in Netlify UI.
+  # If building locally, use scripts/build_with_secrets.sh web instead.
+  command = "flutter/bin/flutter build web --release --base-href /"
+
+# ── Flutter Web SPA — catch-all redirect ─────────────────────────────────────
+# Every path that doesn't match a real static file must serve index.html so
+# Flutter's client-side router can handle it. Status 200 (not 301) is required
+# so the URL stays intact in the address bar.
+[[redirects]]
+  from   = "/*"
+  to     = "/index.html"
+  status = 200
+
+# ── Security headers ─────────────────────────────────────────────────────────
+[[headers]]
+  for = "/*"
+  [headers.values]
+    # Prevent clickjacking
+    X-Frame-Options = "SAMEORIGIN"
+    # Enable XSS filtering in older browsers
+    X-XSS-Protection = "1; mode=block"
+    # Prevent MIME type sniffing
+    X-Content-Type-Options = "nosniff"
+    # Referrer policy — don't leak auth tokens in Referer header
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    # Permissions policy — disable unused browser features
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+
+# ── Aggressive caching for hashed Flutter assets ─────────────────────────────
+# Flutter's build system appends content hashes to JS/CSS filenames so it is
+# safe to cache them forever. index.html and manifest.json must NOT be cached
+# so users always get the latest version after a deploy.
+[[headers]]
+  for = "/flutter_bootstrap.js"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/main.dart.js"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/assets/**"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/icons/**"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/canvaskit/**"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# index.html and manifest.json: never cache (always re-fetch after deploy)
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
+
+[[headers]]
+  for = "/manifest.json"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
