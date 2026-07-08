@@ -667,8 +667,8 @@ class AppState extends ChangeNotifier {
   /// Called by [GbpAuthService] polling callback after successful OAuth.
   void connectGoogleViaOAuth(GbpAuthResult result) {
     _googleConnected = true;
-    // Store location in company object if we got one from OAuth
-    if (result.locationId != null && _company != null) {
+    // Store location and review link in company object if we got them from OAuth
+    if (_company != null) {
       _company = Company(
         id:                _company!.id,
         name:              _company!.name,
@@ -680,13 +680,15 @@ class AppState extends ChangeNotifier {
         teamSize:          _company!.teamSize,
         googleConnected:   true,
         googleBusinessId:  _company!.googleBusinessId,
-        googleReviewLink:  _company!.googleReviewLink,
-        gbpLocationId:     result.locationId,
+        // Use review link from OAuth result; keep existing if not returned
+        googleReviewLink:  result.googleReviewLink ?? _company!.googleReviewLink,
+        gbpLocationId:     result.locationId ?? _company!.gbpLocationId,
         createdAt:         _company!.createdAt,
       );
     }
     notifyListeners();
-    // Persist to Firestore
+    // Persist to Firestore — server already wrote google_review_link via callback,
+    // but we sync the connected flag here for immediate in-app update.
     _fs.updateGoogleConnected(true).catchError((e) {
       if (kDebugMode) debugPrint('connectGoogleViaOAuth Firestore error: $e');
     });

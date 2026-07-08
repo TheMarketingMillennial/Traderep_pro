@@ -340,9 +340,16 @@ class _SubmissionCard extends StatelessWidget {
           ),
 
           // ── Photo strip ──────────────────────────────────────────────────
-          if (submission.photos.isNotEmpty)
+          if (submission.photos.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 0, 4),
+              child: Text(
+                '${submission.photos.length} photo${submission.photos.length == 1 ? '' : 's'} — tap to view full size',
+                style: const TextStyle(color: TRColors.grayMid, fontSize: 11),
+              ),
+            ),
             SizedBox(
-              height: 100,
+              height: 130,
               child: ListView.builder(
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
@@ -352,27 +359,92 @@ class _SubmissionCard extends StatelessWidget {
                   return GestureDetector(
                     onTap: () => _openPhotoViewer(context, submission.photos, i),
                     child: Container(
-                      width: 88,
+                      width: 110,
                       margin: const EdgeInsets.only(right: 8),
                       decoration: BoxDecoration(
                         color: TRColors.navyMid,
                         borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: TRColors.divider),
                       ),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(10),
-                        child: photo.displayUrl != null
-                            ? Image.network(
-                                photo.displayUrl!,
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            if (photo.networkUrl != null)
+                              Image.network(
+                                photo.networkUrl!,
                                 fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => _PhotoPlaceholder(type: photo.type),
+                                loadingBuilder: (_, child, progress) {
+                                  if (progress == null) return child;
+                                  return Center(
+                                    child: CircularProgressIndicator(
+                                      value: progress.expectedTotalBytes != null
+                                          ? progress.cumulativeBytesLoaded /
+                                              progress.expectedTotalBytes!
+                                          : null,
+                                      strokeWidth: 2,
+                                      color: TRColors.gold,
+                                    ),
+                                  );
+                                },
+                                errorBuilder: (_, err, ___) => Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(Icons.broken_image_rounded,
+                                        color: TRColors.error, size: 28),
+                                    const SizedBox(height: 4),
+                                    const Text('Failed to\nload',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                            color: TRColors.error, fontSize: 9)),
+                                  ],
+                                ),
                               )
-                            : _PhotoPlaceholder(type: photo.type),
+                            else
+                              _PhotoPlaceholder(type: photo.type),
+                            // Type label badge
+                            Positioned(
+                              bottom: 4, left: 4,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 5, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.6),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  photo.type.name.toUpperCase(),
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 8,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            // Tap indicator
+                            Positioned(
+                              top: 4, right: 4,
+                              child: Container(
+                                padding: const EdgeInsets.all(3),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.5),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: const Icon(Icons.zoom_in_rounded,
+                                    color: Colors.white, size: 12),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   );
                 },
               ),
             ),
+          ],
 
           // ── Action buttons (pending only) ────────────────────────────────
           if (showActions)
@@ -667,13 +739,54 @@ class _PhotoViewerScreenState extends State<_PhotoViewerScreen> {
           final photo = widget.photos[i];
           return InteractiveViewer(
             child: Center(
-              child: photo.displayUrl != null
+              child: photo.networkUrl != null
                   ? Image.network(
-                      photo.displayUrl!,
+                      photo.networkUrl!,
                       fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, color: Colors.white54, size: 64),
+                      loadingBuilder: (_, child, progress) {
+                        if (progress == null) return child;
+                        return Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              CircularProgressIndicator(
+                                value: progress.expectedTotalBytes != null
+                                    ? progress.cumulativeBytesLoaded /
+                                        progress.expectedTotalBytes!
+                                    : null,
+                                color: TRColors.gold,
+                              ),
+                              const SizedBox(height: 12),
+                              const Text('Loading photo…',
+                                  style: TextStyle(color: Colors.white54, fontSize: 13)),
+                            ],
+                          ),
+                        );
+                      },
+                      errorBuilder: (_, err, ___) => Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.broken_image_rounded,
+                              color: Colors.white38, size: 72),
+                          const SizedBox(height: 12),
+                          const Text('Could not load photo',
+                              style: TextStyle(color: Colors.white54, fontSize: 14)),
+                          const SizedBox(height: 4),
+                          const Text('Check Firebase Storage permissions',
+                              style: TextStyle(color: Colors.white30, fontSize: 11)),
+                        ],
+                      ),
                     )
-                  : const Icon(Icons.image_not_supported, color: Colors.white54, size: 64),
+                  : const Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.image_not_supported_rounded,
+                            color: Colors.white38, size: 72),
+                        SizedBox(height: 12),
+                        Text('No photo URL available',
+                            style: TextStyle(color: Colors.white54, fontSize: 14)),
+                      ],
+                    ),
             ),
           );
         },

@@ -25,17 +25,27 @@ class GbpAuthResult {
   final bool success;
   final String? locationId;
   final String? locationName;
+  final String? googleReviewLink;  // Google review URL — set after OAuth if placeId found
   final String? error;
 
   const GbpAuthResult._({
     required this.success,
     this.locationId,
     this.locationName,
+    this.googleReviewLink,
     this.error,
   });
 
-  factory GbpAuthResult.connected({String? locationId, String? locationName}) =>
-      GbpAuthResult._(success: true, locationId: locationId, locationName: locationName);
+  factory GbpAuthResult.connected({
+    String? locationId,
+    String? locationName,
+    String? googleReviewLink,
+  }) => GbpAuthResult._(
+    success: true,
+    locationId: locationId,
+    locationName: locationName,
+    googleReviewLink: googleReviewLink,
+  );
 
   factory GbpAuthResult.failed(String error) =>
       GbpAuthResult._(success: false, error: error);
@@ -132,11 +142,12 @@ class GbpAuthService {
 
           if (connected) {
             final result = GbpAuthResult.connected(
-              locationId:   data['location_id']   as String?,
-              locationName: data['location_name'] as String?,
+              locationId:        data['location_id']        as String?,
+              locationName:      data['location_name']      as String?,
+              googleReviewLink:  data['google_review_link'] as String?,
             );
             if (kDebugMode) {
-              debugPrint('[GbpAuth] ✅ Connected — location: ${result.locationId}');
+              debugPrint('[GbpAuth] ✅ Connected — location: ${result.locationId}, reviewLink: ${result.googleReviewLink}');
             }
             onConnected?.call(result);
             return result;

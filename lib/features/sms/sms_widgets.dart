@@ -481,17 +481,18 @@ class _SendSmsSheetState extends State<SendSmsSheet> {
               ),
             ),
 
-            // ── Server mode notice ────────────────────────────────────────────
-            const SizedBox(height: 12),
-            Center(child: Text(
-              _serverMockMode
-                ? 'Mock mode — Twilio not configured on server'
-                : 'Live — SMS will be sent via Twilio',
-              style: TextStyle(
-                color: _serverMockMode ? TRColors.warning : TRColors.success,
-                fontSize: 11,
-              ),
-            )),
+            // Only show a notice when mock mode is active so operators
+            // know to configure Twilio on Railway. No notice when live.
+            if (_serverMockMode) ...[
+              const SizedBox(height: 12),
+              Center(child: Text(
+                'Mock mode — Twilio not configured on server',
+                style: TextStyle(
+                  color: TRColors.warning.withValues(alpha: 0.8),
+                  fontSize: 11,
+                ),
+              )),
+            ],
           ],
         ),
       ),

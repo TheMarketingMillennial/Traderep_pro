@@ -823,9 +823,10 @@ app.get('/gbp/callback', async (req, res) => {
     console.log(`[GBP OAuth] Tokens received for company: ${companyId} | has_refresh: ${!!refresh_token}`);
 
     // ── Fetch user's GBP accounts ──────────────────────────────────────────
-    let locationId  = null;
-    let accountName = null;
+    let locationId       = null;
+    let accountName      = null;
     let locationDisplayName = null;
+    let googleReviewLink = null;
 
     try {
       // List accounts
@@ -839,9 +840,9 @@ app.get('/gbp/callback', async (req, res) => {
       if (accounts.length > 0) {
         accountName = accounts[0].name; // e.g. "accounts/12345678"
 
-        // List locations under the first account
+        // List locations under the first account — include googlePlaceId for review URL
         const locRes = await fetch(
-          `https://mybusinessbusinessinformation.googleapis.com/v1/${accountName}/locations?readMask=name,title`,
+          `https://mybusinessbusinessinformation.googleapis.com/v1/${accountName}/locations?readMask=name,title,metadata`,
           { headers: { Authorization: `Bearer ${access_token}` } }
         );
         const locData = await locRes.json();
@@ -849,8 +850,26 @@ app.get('/gbp/callback', async (req, res) => {
 
         if (locations.length > 0) {
           // Use the first location — most businesses have one
-          locationId = locations[0].name; // e.g. "locations/12345678"
-          locationDisplayName = locations[0].title || '';
+          const loc = locations[0];
+          locationId = loc.name; // e.g. "locations/12345678"
+          locationDisplayName = loc.title || '';
+
+          // Build the Google review link from Place ID (preferred) or location numeric ID
+          const placeId = loc.metadata?.mapsUri
+            ? null // mapsUri doesn't give us the place ID directly
+            : null;
+          const googlePlaceId = loc.metadata?.placeId || null;
+
+          if (googlePlaceId) {
+            googleReviewLink = `https://search.google.com/local/writereview?placeid=${googlePlaceId}`;
+            console.log(`[GBP OAuth] Review link (placeId): ${googleReviewLink}`);
+          } else if (locationId) {
+            // Fallback: extract numeric location ID and use maps search
+            const numericId = locationId.replace(/.*\/locations\//, '');
+            googleReviewLink = `https://search.google.com/local/writereview?placeid=${numericId}`;
+            console.log(`[GBP OAuth] Review link (locationId fallback): ${googleReviewLink}`);
+          }
+
           // GBP post API needs "accounts/xxx/locations/yyy" format
           if (locationId && accountName && !locationId.startsWith('accounts/')) {
             locationId = `${accountName}/${locationId}`;
@@ -867,15 +886,17 @@ app.get('/gbp/callback', async (req, res) => {
       console.warn('[GBP OAuth] Location fetch failed (non-fatal):', locationErr.message);
     }
 
-    // ── Save tokens + locationId to Firestore ─────────────────────────────
+    // ── Save tokens + locationId + review link to Firestore ───────────────
     const updateData = {
       gbp_access_token:   access_token,
       gbp_connected:      true,
       gbp_connected_at:   admin.firestore.FieldValue.serverTimestamp(),
     };
-    if (refresh_token) updateData.gbp_refresh_token = refresh_token;
-    if (locationId)    updateData.gbp_location_id   = locationId;
+    if (refresh_token)    updateData.gbp_refresh_token  = refresh_token;
+    if (locationId)       updateData.gbp_location_id    = locationId;
     if (locationDisplayName) updateData.gbp_location_name = locationDisplayName;
+    if (googleReviewLink) updateData.google_review_link = googleReviewLink;
+    console.log(`[GBP OAuth] Writing to Firestore — reviewLink: ${googleReviewLink || 'none'}, locationId: ${locationId || 'none'}`);
 
     await db.collection('companies').doc(companyId).set(updateData, { merge: true });
     console.log(`[GBP OAuth] ✅ Company ${companyId} connected — location: ${locationId || 'not found'}`);
@@ -972,10 +993,11 @@ app.get('/gbp/status', async (req, res) => {
     const doc = await db.collection('companies').doc(companyId).get();
     const data = doc.data() || {};
     res.json({
-      connected:     !!data.gbp_connected,
-      location_id:   data.gbp_location_id   || null,
-      location_name: data.gbp_location_name || null,
-      oauth_enabled: !!(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET),
+      connected:          !!data.gbp_connected,
+      location_id:        data.gbp_location_id    || null,
+      location_name:      data.gbp_location_name  || null,
+      google_review_link: data.google_review_link || null,
+      oauth_enabled:      !!(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET),
     });
   } catch (e) {
     res.json({ connected: false, error: e.message });
