@@ -46,6 +46,9 @@ class _SendSmsSheetState extends State<SendSmsSheet> {
   late SmsTemplate _selectedTemplate;
   String? _phoneError;
   bool _sending = false;
+  // Server mode — resolved once on open; refreshed before send
+  bool _serverMockMode = true;   // true until health check says otherwise
+  bool _healthChecked = false;
 
   // Crew-editable variable values: key → current value
   final Map<String, String> _variableValues = {};
@@ -58,6 +61,18 @@ class _SendSmsSheetState extends State<SendSmsSheet> {
     _phoneCtrl = TextEditingController(text: widget.customerPhone);
     _selectedTemplate = widget.templates.first;
     _initVariableControllers();
+    // Check server mode immediately so the badge is accurate before send
+    _checkServerMode();
+  }
+
+  Future<void> _checkServerMode() async {
+    final status = await SmsService.instance.checkHealth();
+    if (mounted) {
+      setState(() {
+        _serverMockMode = status.mockMode;
+        _healthChecked = true;
+      });
+    }
   }
 
   void _initVariableControllers() {
@@ -249,20 +264,76 @@ class _SendSmsSheetState extends State<SendSmsSheet> {
                 )),
               ]),
               const Spacer(),
-              // Mock badge
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: TRColors.warning.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: TRColors.warning.withValues(alpha: 0.4)),
-                ),
-                child: const Text('MOCK', style: TextStyle(
-                  color: TRColors.warning, fontSize: 10, fontWeight: FontWeight.w700,
-                )),
-              ),
+              // Live / Mock badge — reflects actual server Twilio config
+              _healthChecked
+                ? Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: _serverMockMode
+                        ? TRColors.warning.withValues(alpha: 0.15)
+                        : TRColors.success.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: _serverMockMode
+                          ? TRColors.warning.withValues(alpha: 0.5)
+                          : TRColors.success.withValues(alpha: 0.5),
+                      ),
+                    ),
+                    child: Text(
+                      _serverMockMode ? 'MOCK' : 'LIVE',
+                      style: TextStyle(
+                        color: _serverMockMode ? TRColors.warning : TRColors.success,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  )
+                : const SizedBox(
+                    width: 14, height: 14,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 1.5,
+                      valueColor: AlwaysStoppedAnimation(TRColors.grayMid),
+                    ),
+                  ),
             ]),
             const SizedBox(height: 20),
+
+            // ── Missing Review Link Warning ────────────────────────────────
+            if (widget.templates.any((t) => t.type == SmsType.reviewRequest) &&
+                (widget.reviewLink == null || widget.reviewLink!.isEmpty)) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: TRColors.warning.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: TRColors.warning.withValues(alpha: 0.4)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.only(top: 1),
+                      child: Icon(Icons.warning_amber_rounded,
+                          color: TRColors.warning, size: 16),
+                    ),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'No Google review link connected. '  
+                        'Connect your Google Business Profile in Settings → '  
+                        'Profile to include your review link in this message.',
+                        style: TextStyle(
+                          color: TRColors.warning,
+                          fontSize: 12,
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
 
             // ── Phone Field ──────────────────────────────────────────────────
             const Text('Customer Phone', style: TextStyle(
@@ -410,11 +481,16 @@ class _SendSmsSheetState extends State<SendSmsSheet> {
               ),
             ),
 
-            // ── Mock notice ──────────────────────────────────────────────────
+            // ── Server mode notice ────────────────────────────────────────────
             const SizedBox(height: 12),
-            const Center(child: Text(
-              'Mock mode active — no real SMS will be sent',
-              style: TextStyle(color: TRColors.grayMid, fontSize: 11),
+            Center(child: Text(
+              _serverMockMode
+                ? 'Mock mode — Twilio not configured on server'
+                : 'Live — SMS will be sent via Twilio',
+              style: TextStyle(
+                color: _serverMockMode ? TRColors.warning : TRColors.success,
+                fontSize: 11,
+              ),
             )),
           ],
         ),

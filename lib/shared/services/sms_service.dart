@@ -85,6 +85,18 @@ class SmsService {
         final msgData = data['message'] as Map<String, dynamic>;
         final message = _parseMessage(msgData);
         return SmsResult.success(message: message);
+      } else if (res.statusCode == 503) {
+        // Server is up but Twilio credentials not configured — surface this
+        // clearly so the operator knows to add env vars, not silently mock.
+        const error = 'Twilio is not configured on the server. '
+            'Add TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_PHONE_NUMBER '
+            'to Railway environment variables.';
+        if (kDebugMode) debugPrint('[SmsService] $error');
+        return SmsResult.failure(
+          error: error,
+          toPhone: toPhone,
+          templateKey: templateKey,
+        );
       } else {
         final error = data['error'] as String? ?? 'Unknown server error';
         if (kDebugMode) debugPrint('SMS send failed: $error');

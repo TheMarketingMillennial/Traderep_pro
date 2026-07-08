@@ -185,13 +185,18 @@ class SmsTemplates {
     type: SmsType.reviewRequest,
     buildBody: ({required customerName, required jobType, required companyName, reviewLink}) =>
       (reviewLink != null && reviewLink.isNotEmpty)
-        ? 'Hey $customerName — $companyName here. We just wrapped up your $jobType '
-          'and wanted to say thanks for trusting us with the work. '
-          'If you have 60 seconds, a Google review means the world to a small business: '
-          '$reviewLink\n\nNo pressure at all — appreciate you either way! 🙏'
-        : 'Hey $customerName — $companyName here. Just wanted to say thank you '
-          'for choosing us for your $jobType. It was a pleasure working with you. '
-          'If you ever need us again, don\'t hesitate to reach out! 🙏',
+        ? 'Hey $customerName! $companyName here — we just finished your $jobType and '
+          'wanted to say thank you for trusting us with the work. 🙏\n\n'
+          'Would you mind leaving us a quick Google review? It takes less than 60 seconds '
+          'and makes a huge difference for our small business:\n'
+          '$reviewLink\n\n'
+          'Thanks so much — we really appreciate it!'
+        : 'Hey $customerName! $companyName here — we just finished your $jobType and '
+          'wanted to say thank you for trusting us. 🙏\n\n'
+          'Could you take 60 seconds to leave us a Google review? Reviews help our '
+          'small business more than you know. Just search "$companyName" on Google '
+          'and tap "Write a review" — we\'d really appreciate it!\n\n'
+          'Thanks again for choosing us!',
   );
 
   // ── Status Updates ──────────────────────────────────────────────────────────
