@@ -54,7 +54,20 @@ class _PhotoApprovalScreenState extends State<PhotoApprovalScreen>
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
               child: Row(
                 children: [
-                  const Icon(Icons.approval_rounded, color: TRColors.gold, size: 22),
+                  // Back to main app
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      width: 38, height: 38,
+                      decoration: BoxDecoration(
+                        color: TRColors.cardDark,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: TRColors.divider),
+                      ),
+                      child: const Icon(Icons.arrow_back_rounded,
+                          color: TRColors.white, size: 18),
+                    ),
+                  ),
                   const SizedBox(width: 10),
                   const Expanded(child: Text('Photo Approvals', style: TextStyle(
                     color: TRColors.white, fontSize: 22, fontWeight: FontWeight.w800,

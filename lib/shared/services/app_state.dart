@@ -697,6 +697,37 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// Disconnects Google Business Profile — clears location ID, resets connected flag.
+  /// After this the user can reconnect with any Google account.
+  void disconnectGbp() {
+    _googleConnected = false;
+    if (_company != null) {
+      _company = Company(
+        id:                _company!.id,
+        name:              _company!.name,
+        logoUrl:           _company!.logoUrl,
+        tradeCategory:     _company!.tradeCategory,
+        serviceArea:       _company!.serviceArea,
+        phone:             _company!.phone,
+        website:           _company!.website,
+        teamSize:          _company!.teamSize,
+        googleConnected:   false,
+        googleBusinessId:  null,
+        googleReviewLink:  null,
+        gbpLocationId:     null,
+        createdAt:         _company!.createdAt,
+      );
+    }
+    notifyListeners();
+    // Persist to Firestore
+    _fs.updateGoogleConnected(false).catchError((e) {
+      if (kDebugMode) debugPrint('disconnectGbp Firestore error: $e');
+    });
+    _fs.updateGbpLocationId(null).catchError((e) {
+      if (kDebugMode) debugPrint('disconnectGbp clearLocationId error: $e');
+    });
+  }
+
   /// Persists the GBP location resource name for this company.
   /// Pass null to clear (reverts to manual Phase 1 posting flow in PublishSheet).
   Future<void> updateGbpLocationId(String? locationId) async {

@@ -8,6 +8,8 @@ import '../../shared/widgets/tr_widgets.dart';
 import '../../shared/models/models.dart';
 import '../pricing/trial_widgets.dart';
 import '../pricing/pricing_screen.dart';
+import 'help_support_screen.dart';
+import 'privacy_policy_screen.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -409,29 +411,20 @@ class ProfileScreen extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           _SettingsTile(
-            icon: Icons.dark_mode_rounded,
-            title: 'Dark / Light Mode',
-            subtitle: state.themeMode == ThemeMode.dark ? 'Dark mode active' : 'Light mode active',
-            trailing: Switch(
-              value: state.themeMode == ThemeMode.dark,
-              onChanged: (_) => state.toggleTheme(),
-              activeThumbColor: TRColors.gold,
-              activeTrackColor: TRColors.goldDim,
-              inactiveThumbColor: TRColors.grayMid,
-            ),
-            onTap: () => state.toggleTheme(),
-          ),
-          _SettingsTile(
             icon: Icons.help_outline_rounded,
             title: 'Help & Support',
-            subtitle: 'FAQs, contact support',
-            onTap: () => launchUrl(Uri.parse('mailto:support@traderep.app?subject=TradeRep%20Support')),
+            subtitle: 'FAQs and contact support',
+            onTap: () => Navigator.push(context, MaterialPageRoute(
+              builder: (_) => const HelpSupportScreen(),
+            )),
           ),
           _SettingsTile(
             icon: Icons.privacy_tip_outlined,
             title: 'Privacy Policy',
-            subtitle: 'How TradeRep handles your data',
-            onTap: () => launchUrl(Uri.parse('https://traderep.app/privacy'), mode: LaunchMode.externalApplication),
+            subtitle: 'How TradeRep Pro handles your data',
+            onTap: () => Navigator.push(context, MaterialPageRoute(
+              builder: (_) => const PrivacyPolicyScreen(),
+            )),
           ),
           const SizedBox(height: 10),
           GestureDetector(
@@ -1377,7 +1370,98 @@ class _GbpOAuthSheetState extends State<_GbpOAuthSheet> {
               ]),
             ),
 
-          if (_phase != _ProfileGbpPhase.connected)
+          if (_phase == _ProfileGbpPhase.connected) ...[
+            // ── Connected actions ──────────────────────────────────────────
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.sync_rounded, size: 18),
+                label: const Text('Reconnect with Different Account'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: TRColors.gold,
+                  side: const BorderSide(
+                      color: TRColors.gold, width: 1.5),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  textStyle: const TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w700),
+                ),
+                onPressed: () {
+                  // Reset to idle so the connect flow starts fresh
+                  setState(() {
+                    _phase = _ProfileGbpPhase.idle;
+                    _locationName = null;
+                  });
+                },
+              ),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton.icon(
+                icon: const Icon(Icons.link_off_rounded,
+                    size: 18, color: TRColors.error),
+                label: const Text('Disconnect Google Business Profile',
+                    style: TextStyle(color: TRColors.error)),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: BorderSide(
+                        color: TRColors.error.withValues(alpha: 0.4)),
+                  ),
+                ),
+                onPressed: () {
+                  showDialog<void>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      backgroundColor: TRColors.cardDark,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16)),
+                      title: const Text('Disconnect GBP?',
+                          style: TextStyle(
+                              color: TRColors.white,
+                              fontWeight: FontWeight.w700)),
+                      content: const Text(
+                        'This will remove the connection to your Google '
+                        'Business Profile. Review links will no longer be '
+                        'included in SMS messages until you reconnect.',
+                        style: TextStyle(
+                            color: TRColors.grayLight, fontSize: 13,
+                            height: 1.5),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx),
+                          child: const Text('Cancel',
+                              style: TextStyle(
+                                  color: TRColors.grayLight)),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            widget.state.disconnectGbp();
+                            Navigator.pop(context); // close sheet
+                          },
+                          child: const Text('Disconnect',
+                              style: TextStyle(
+                                  color: TRColors.error,
+                                  fontWeight: FontWeight.w700)),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 8),
+            Center(child: TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Done',
+                  style: TextStyle(color: TRColors.grayMid, fontSize: 13)),
+            )),
+          ] else ...[
             GoldButton(
               label: _phase == _ProfileGbpPhase.waiting
                   ? 'Waiting for browser…'
@@ -1389,13 +1473,13 @@ class _GbpOAuthSheetState extends State<_GbpOAuthSheet> {
                   : Icons.login_rounded,
               onTap: _phase == _ProfileGbpPhase.waiting ? null : _startOAuth,
             ),
-          const SizedBox(height: 8),
-          if (_phase != _ProfileGbpPhase.connected)
+            const SizedBox(height: 8),
             Center(child: TextButton(
               onPressed: () => Navigator.pop(context),
               child: const Text('Cancel',
                   style: TextStyle(color: TRColors.grayMid, fontSize: 13)),
             )),
+          ],
         ],
       ),
     );
@@ -1407,7 +1491,6 @@ class _SettingsTile extends StatelessWidget {
   final String title;
   final String subtitle;
   final Color? statusColor;
-  final Widget? trailing;
   final VoidCallback? onTap;
 
   const _SettingsTile({
@@ -1415,7 +1498,6 @@ class _SettingsTile extends StatelessWidget {
     required this.title,
     required this.subtitle,
     this.statusColor,
-    this.trailing,
     this.onTap,
   });
 
@@ -1453,7 +1535,7 @@ class _SettingsTile extends StatelessWidget {
                 )),
               ],
             )),
-            trailing ?? const Icon(Icons.chevron_right_rounded, color: TRColors.grayMid, size: 18),
+            const Icon(Icons.chevron_right_rounded, color: TRColors.grayMid, size: 18),
           ],
         ),
       ),
