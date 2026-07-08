@@ -431,8 +431,8 @@ class FirestoreService {
   }
 
   /// Crew member submits photos for a job.
-  /// Uploads each local file to Firebase Storage, then writes the
-  /// PhotoSubmission document to Firestore.
+  /// Uploads each XFile to Firebase Storage (works on both mobile and web),
+  /// then writes the PhotoSubmission document to Firestore.
   Future<PhotoSubmission> submitPhotos({
     required String jobId,
     required String jobName,
@@ -440,19 +440,34 @@ class FirestoreService {
     required String submittedByName,
     required List<SubmittedPhoto> photos,
     String? crewNote,
+    // The original XFile list must be passed alongside photos so we can read
+    // bytes on all platforms (XFile.readAsBytes() works on web + mobile).
+    List<XFile>? xFiles,
   }) async {
     final submissionId = 'sub_${DateTime.now().millisecondsSinceEpoch}';
 
-    // Upload each photo to Firebase Storage and collect network URLs
+    // Upload each photo to Firebase Storage and collect network URLs.
+    // We use XFile.readAsBytes() which works on both mobile (file path) and
+    // web (blob / data URL) — the old `!kIsWeb` guard was wrongly skipping
+    // all uploads on web preview.
     final uploadedPhotos = <SubmittedPhoto>[];
-    for (final photo in photos) {
-      if (photo.localPath != null && !kIsWeb) {
+    for (int i = 0; i < photos.length; i++) {
+      final photo = photos[i];
+      // Resolve the XFile: prefer the passed xFiles list (most reliable on web)
+      // otherwise fall back to constructing one from localPath (mobile only).
+      final xfile = (xFiles != null && i < xFiles.length)
+          ? xFiles[i]
+          : (photo.localPath != null ? XFile(photo.localPath!) : null);
+
+      if (xfile != null) {
         try {
-          // Use XFile.readAsBytes() — works on all platforms, no dart:io needed.
-          final bytes = await XFile(photo.localPath!).readAsBytes();
+          final bytes = await xfile.readAsBytes();
           final ref = FirebaseStorage.instance
               .ref('photo_submissions/$_companyId/$jobId/$submissionId/${photo.id}.jpg');
-          final task = await ref.putData(Uint8List.fromList(bytes));
+          final task = await ref.putData(
+            Uint8List.fromList(bytes),
+            SettableMetadata(contentType: 'image/jpeg'),
+          );
           final url = await task.ref.getDownloadURL();
           uploadedPhotos.add(SubmittedPhoto(
             id: photo.id,
@@ -461,12 +476,14 @@ class FirestoreService {
             type: photo.type,
             label: photo.label,
           ));
+          if (kDebugMode) debugPrint('[Storage] Uploaded ${photo.id} → $url');
         } catch (e) {
-          if (kDebugMode) debugPrint('Photo upload error for ${photo.id}: $e');
-          // Keep the local path version if upload fails
+          if (kDebugMode) debugPrint('[Storage] Upload error for ${photo.id}: $e');
+          // Keep the photo without networkUrl so submission still saves
           uploadedPhotos.add(photo);
         }
       } else {
+        // No bytes available (shouldn't happen in normal flow)
         uploadedPhotos.add(photo);
       }
     }

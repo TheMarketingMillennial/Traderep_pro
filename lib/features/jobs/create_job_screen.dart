@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_theme.dart';
@@ -21,10 +22,12 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
   final _notesCtrl = TextEditingController();
   String? _selectedTemplate;
   DateTime? _startDate;
+  bool _saving = false;
 
   @override
   Widget build(BuildContext context) {
-    final state = context.read<AppState>();
+    // Use watch so Save button disables while _saving
+    final state = context.watch<AppState>();
 
     return Scaffold(
       backgroundColor: TRColors.navyDeep,
@@ -39,10 +42,17 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
         )),
         actions: [
           TextButton(
-            onPressed: () => _saveJob(context, state),
-            child: const Text('Save', style: TextStyle(
-              color: TRColors.gold, fontSize: 16, fontWeight: FontWeight.w700,
-            )),
+            onPressed: _saving ? null : () => _saveJob(context, state),
+            child: _saving
+                ? const SizedBox(
+                    width: 18, height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2, color: TRColors.gold,
+                    ),
+                  )
+                : const Text('Save', style: TextStyle(
+                    color: TRColors.gold, fontSize: 16, fontWeight: FontWeight.w700,
+                  )),
           ),
         ],
       ),
@@ -88,9 +98,9 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
             ]),
             const SizedBox(height: 32),
             GoldButton(
-              label: 'Create Job File',
+              label: _saving ? 'Saving…' : 'Create Job File',
               icon: Icons.add_circle_rounded,
-              onTap: () => _saveJob(context, state),
+              onTap: _saving ? null : () => _saveJob(context, state),
             ),
             const SizedBox(height: 40),
           ],
@@ -224,37 +234,66 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
     );
   }
 
-  void _saveJob(BuildContext context, AppState state) {
-    if (_nameCtrl.text.isEmpty || _addressCtrl.text.isEmpty || _jobTypeCtrl.text.isEmpty) {
+  Future<void> _saveJob(BuildContext context, AppState state) async {
+    if (_nameCtrl.text.trim().isEmpty ||
+        _addressCtrl.text.trim().isEmpty ||
+        _jobTypeCtrl.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please fill in required fields'), backgroundColor: TRColors.error),
+        const SnackBar(
+          content: Text('Please fill in Customer Name, Job Address, and Job Type'),
+          backgroundColor: TRColors.error,
+        ),
       );
       return;
     }
 
+    setState(() => _saving = true);
+
+    // Use the real company ID from the authenticated session.
+    // Falls back to FirestoreService._companyId (already set to Firebase UID
+    // by onFirebaseSignIn) so we never write to a hardcoded placeholder.
+    final companyId = state.company?.id ?? state.firestoreCompanyId;
+
     final job = Job(
       id: 'job_${DateTime.now().millisecondsSinceEpoch}',
-      companyId: 'co_001',
-      customerName: _nameCtrl.text,
-      address: _addressCtrl.text,
-      phone: _phoneCtrl.text.isEmpty ? 'N/A' : _phoneCtrl.text,
-      email: _emailCtrl.text.isEmpty ? 'N/A' : _emailCtrl.text,
-      jobType: _jobTypeCtrl.text,
-      templateId: _selectedTemplate ?? 'tmpl_roofing',
+      companyId: companyId,
+      customerName: _nameCtrl.text.trim(),
+      address: _addressCtrl.text.trim(),
+      phone: _phoneCtrl.text.trim().isEmpty ? '' : _phoneCtrl.text.trim(),
+      email: _emailCtrl.text.trim().isEmpty ? '' : _emailCtrl.text.trim(),
+      jobType: _jobTypeCtrl.text.trim(),
+      templateId: _selectedTemplate ?? (state.templates.isNotEmpty ? state.templates.first.id : ''),
       status: JobStatus.lead,
       startDate: _startDate,
-      notes: _notesCtrl.text.isEmpty ? null : _notesCtrl.text,
+      notes: _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
       createdAt: DateTime.now(),
     );
 
-    state.addJob(job);
-    Navigator.pop(context);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Job created successfully!'),
-        backgroundColor: TRColors.success,
-      ),
-    );
+    // Capture navigator/messenger before the await gap
+    final nav = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+
+    try {
+      await state.addJobAsync(job);
+      if (!mounted) return;
+      nav.pop();
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Job created successfully!'),
+          backgroundColor: TRColors.success,
+        ),
+      );
+    } catch (e) {
+      if (kDebugMode) debugPrint('_saveJob error: $e');
+      if (!mounted) return;
+      setState(() => _saving = false);
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Failed to save job: ${e.toString()}'),
+          backgroundColor: TRColors.error,
+        ),
+      );
+    }
   }
 
   String _formatDate(DateTime date) {

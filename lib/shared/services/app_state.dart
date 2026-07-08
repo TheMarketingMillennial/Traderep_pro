@@ -43,6 +43,11 @@ class AppState extends ChangeNotifier {
   bool _firestoreReady = false;
   bool get firestoreReady => _firestoreReady;
 
+  /// Exposes the company ID that FirestoreService is currently keyed to.
+  /// This is the Firebase Auth UID set by onFirebaseSignIn().
+  /// Use this as the authoritative companyId when company doc hasn't loaded yet.
+  String get firestoreCompanyId => _fs.companyId;
+
   // ─── Theme ──────────────────────────────────────────────────────────────────
   ThemeMode _themeMode = ThemeMode.dark;
   ThemeMode get themeMode => _themeMode;
@@ -87,6 +92,16 @@ class AppState extends ChangeNotifier {
     _fs.addJob(job).catchError((e) {
       if (kDebugMode) debugPrint('addJob Firestore error: $e');
     });
+  }
+
+  /// Async variant used by CreateJobScreen — awaits Firestore write so the
+  /// caller can catch errors and show them to the user instead of swallowing.
+  Future<void> addJobAsync(Job job) async {
+    // Optimistic local insert first so the list updates immediately
+    _jobs = [job, ..._jobs];
+    notifyListeners();
+    // Await the Firestore write — throws on failure so caller can react
+    await _fs.addJob(job);
   }
 
   void updateJob(Job updated) {
@@ -535,6 +550,9 @@ class AppState extends ChangeNotifier {
         submittedByName: user.name,
         photos: photos,
         crewNote: crewNote,
+        // Pass original XFile list so FirestoreService can read bytes on
+        // both mobile (file path) and web (blob/data URL via readAsBytes())
+        xFiles: pickedFiles,
       );
       // Optimistic local insert
       _photoSubmissions = [submission, ..._photoSubmissions];
