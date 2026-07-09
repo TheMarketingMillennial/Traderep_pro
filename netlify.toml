@@ -11,13 +11,17 @@
 
 [build]
   # Directory containing the built Flutter web output.
-  # Run: flutter build web --release (from project root) before deploying.
   publish = "build/web"
 
-  # Optional: Netlify can run this automatically on push.
-  # Requires all environment variables below to be set in Netlify UI.
-  # If building locally, use scripts/build_with_secrets.sh web instead.
-  command = "flutter/bin/flutter build web --release --base-href /"
+  # Netlify doesn't have Flutter pre-installed — this command downloads
+  # Flutter 3.35.4, installs it, then builds the web app.
+  command = """
+    git clone https://github.com/flutter/flutter.git --depth 1 --branch 3.35.4 flutter-sdk && \
+    export PATH="$PATH:$(pwd)/flutter-sdk/bin" && \
+    flutter precache --web && \
+    flutter pub get && \
+    flutter build web --release --base-href /
+  """
 
 # ── Flutter Web SPA — catch-all redirect ─────────────────────────────────────
 # Every path that doesn't match a real static file must serve index.html so
