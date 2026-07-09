@@ -388,95 +388,151 @@ class FirestoreService {
   // SUBSCRIPTION / SAAS METRICS
   // ══════════════════════════════════════════════════════════════════════════
 
-  /// Reads subscription from companies/{companyId} subscription map (written by
-  /// Railway Stripe webhook) OR from the legacy saas_metrics doc as fallback.
+  // ══════════════════════════════════════════════════════════════════════════
+  // SUBSCRIPTION — persistent, company-scoped, live-streamed
+  //
+  // Source of truth: companies/{companyId}/subscription (nested map).
+  // Written by:
+  //   • Flutter startTrial() — uses saveSubscription() below
+  //   • Railway Stripe webhook — writes identical fields via Node.js
+  //
+  // Field name mapping (Stripe server → Flutter client):
+  //   status / subscription_status → SubscriptionStatus enum
+  //   trial_start / trial_start_date → trialStartDate
+  //   trial_end  / trial_end_date   → trialEndDate
+  //   trialing → trial, active → active, past_due → pastDue, canceled → cancelled
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /// Live stream of subscription updates.
+  /// Fires whenever the Railway webhook (or Flutter) writes to
+  /// companies/{companyId} — so Stripe events (trial→active, payment_failed)
+  /// are reflected immediately without requiring an app restart.
+  Stream<ActiveSubscription> subscriptionStream() {
+    return _db
+        .collection('companies')
+        .doc(_companyId)
+        .snapshots()
+        .map((snap) {
+      if (!snap.exists || snap.data() == null) return ActiveSubscription.none;
+      return _subscriptionFromDoc(snap.data()!);
+    }).handleError((e) {
+      if (kDebugMode) debugPrint('FirestoreService subscriptionStream error: $e');
+      return ActiveSubscription.none;
+    });
+  }
+
+  /// One-shot read — used on first login before the stream is attached.
   Future<ActiveSubscription> getSubscription() async {
     try {
-      Map<String, dynamic>? d;
-
-      // Primary: read nested subscription map from companies doc
-      // This is exactly what the Railway Stripe webhook writes.
       final companyDoc = await _db.collection('companies').doc(_companyId).get();
       if (companyDoc.exists && companyDoc.data() != null) {
-        final compData = companyDoc.data()!;
-        final subMap = compData['subscription'] as Map<String, dynamic>?;
-        if (subMap != null) {
-          // Normalise Railway field names -> our field names
-          d = Map<String, dynamic>.from(subMap);
-          d['plan_tier']              ??= d['price_key'];
-          d['subscription_status']    ??= d['status'];
-          d['trial_start_date']       ??= d['trial_start'];
-          d['trial_end_date']         ??= d['trial_end'];
-        }
+        return _subscriptionFromDoc(companyDoc.data()!);
       }
-
-      // Fallback: legacy saas_metrics doc for users who signed up before v2
-      if (d == null) {
-        final metricsDoc = await _db
-            .collection('saas_metrics')
-            .doc('metrics_current')
-            .get();
-        if (metricsDoc.exists && metricsDoc.data() != null) {
-          d = metricsDoc.data()!;
-        }
-      }
-
-      if (d == null) return ActiveSubscription.none;
-
-      final statusStr = (d['subscription_status'] as String?) ?? 'trial';
-      final status = SubscriptionStatus.values.firstWhere(
-        (s) => s.name == statusStr,
-        orElse: () => SubscriptionStatus.trial,
-      );
-
-      DateTime tsToDate(dynamic v, DateTime fallback) {
-        if (v is Timestamp) return v.toDate();
-        if (v is String) return DateTime.tryParse(v) ?? fallback;
-        return fallback;
-      }
-
-      final trialStart = tsToDate(
-        d['trial_start_date'],
-        DateTime.now().subtract(const Duration(days: 6)),
-      );
-      final trialEnd = tsToDate(
-        d['trial_end_date'],
-        DateTime.now().add(const Duration(days: 8)),
-      );
-
-      final billingRaw = (d['billing_history'] as List<dynamic>?) ?? [];
-      final billingHistory = billingRaw.map((b) {
-        final bMap = b as Map<String, dynamic>;
-        return BillingRecord(
-          date: DateTime.tryParse((bMap['date'] as String?) ?? '') ??
-              DateTime.now(),
-          amount: (bMap['amount'] as num?)?.toDouble() ?? 0.0,
-          description: (bMap['description'] as String?) ?? '',
-          status: (bMap['status'] as String?) ?? 'paid',
-        );
-      }).toList();
-
-      final purchasedSeats = (d['purchased_seats'] as int?) ?? TRPlan.includedSeats;
-      final extraSeats     = (d['extra_seats']     as int?) ?? 0;
-
-      return ActiveSubscription(
-        status: status,
-        trialStartDate: trialStart,
-        trialEndDate: trialEnd,
-        stripeCustomerId: d['stripe_customer_id'] as String?,
-        stripeSubscriptionId: d['stripe_subscription_id'] as String?,
-        purchasedSeats: purchasedSeats,
-        extraSeats: extraSeats,
-        billingHistory: billingHistory,
-      );
+      return ActiveSubscription.none;
     } catch (e) {
       if (kDebugMode) debugPrint('FirestoreService getSubscription error: $e');
       return ActiveSubscription.none;
     }
   }
 
-  /// Persists subscription state to Firestore.
-  /// Single plan — no tier field required.
+  /// Parses a companies/{id} document into an ActiveSubscription.
+  /// Handles both Railway webhook field names (trial_start, trial_end, status)
+  /// and Flutter-written field names (trial_start_date, trial_end_date,
+  /// subscription_status). Also maps Stripe status strings to our enum.
+  ActiveSubscription _subscriptionFromDoc(Map<String, dynamic> compData) {
+    // Read the nested subscription map first; fall back to top-level fields
+    // for legacy documents written before the nested-map convention.
+    final rawSub = compData['subscription'] as Map<String, dynamic>?;
+    final Map<String, dynamic> d = rawSub != null
+        ? Map<String, dynamic>.from(rawSub)
+        : Map<String, dynamic>.from(compData);
+
+    // Normalise field name aliases so downstream code uses one key each
+    d['subscription_status'] ??= d['status'];
+    d['trial_start_date']    ??= d['trial_start'];
+    d['trial_end_date']      ??= d['trial_end'];
+
+    final statusStr = (d['subscription_status'] as String? ?? '').toLowerCase();
+
+    // Map Stripe status strings AND our own status strings to the enum
+    final status = _parseStatus(statusStr);
+
+    // If nothing is stored yet this is a brand-new doc with no subscription
+    if (statusStr.isEmpty) return ActiveSubscription.none;
+
+    DateTime tsToDate(dynamic v, DateTime fallback) {
+      if (v is Timestamp) return v.toDate();
+      if (v is String)   return DateTime.tryParse(v) ?? fallback;
+      return fallback;
+    }
+
+    final trialStart = tsToDate(
+      d['trial_start_date'],
+      DateTime.now().subtract(const Duration(days: 14)),
+    );
+    final trialEnd = tsToDate(
+      d['trial_end_date'],
+      DateTime.now().add(const Duration(days: 0)),
+    );
+
+    final billingRaw    = (d['billing_history'] as List<dynamic>?) ?? [];
+    final billingHistory = billingRaw.map((b) {
+      final bMap = b as Map<String, dynamic>;
+      return BillingRecord(
+        date:        DateTime.tryParse((bMap['date'] as String?) ?? '') ?? DateTime.now(),
+        amount:      (bMap['amount'] as num?)?.toDouble() ?? 0.0,
+        description: (bMap['description'] as String?) ?? '',
+        status:      (bMap['status'] as String?) ?? 'paid',
+      );
+    }).toList();
+
+    // Seat counts live in the subscription map OR at the top-level saas_metrics
+    // fields that the webhook writes. Prefer nested, fall back to top-level.
+    final purchasedSeats = (d['purchased_seats'] as int?)
+        ?? (compData['purchased_seats'] as int?)
+        ?? TRPlan.includedSeats;
+    final extraSeats = (d['extra_seats'] as int?)
+        ?? (compData['extra_seats'] as int?)
+        ?? 0;
+
+    return ActiveSubscription(
+      status:               status,
+      trialStartDate:       trialStart,
+      trialEndDate:         trialEnd,
+      stripeCustomerId:     (d['stripe_customer_id']     as String?),
+      stripeSubscriptionId: (d['stripe_subscription_id'] as String?),
+      purchasedSeats:       purchasedSeats,
+      extraSeats:           extraSeats,
+      billingHistory:       billingHistory,
+    );
+  }
+
+  /// Maps Stripe's status strings and our internal strings to [SubscriptionStatus].
+  SubscriptionStatus _parseStatus(String raw) {
+    switch (raw) {
+      case 'trial':
+      case 'trialing':
+      case 'trial_ending': // webhook sets this 3 days before end
+        return SubscriptionStatus.trial;
+      case 'active':
+        return SubscriptionStatus.active;
+      case 'past_due':
+      case 'unpaid':
+        return SubscriptionStatus.pastDue;
+      case 'canceled':
+      case 'cancelled':
+        return SubscriptionStatus.cancelled;
+      default:
+        return SubscriptionStatus.none;
+    }
+  }
+
+  /// Persists subscription state to companies/{companyId}/subscription.
+  ///
+  /// Writing to the companies doc (not a separate collection) means:
+  ///   • Data is company-scoped — multiple tenants never collide
+  ///   • The Stripe webhook writes to the same location → single source of truth
+  ///   • subscriptionStream() picks up the change immediately
   Future<void> saveSubscription({
     required String status,
     required DateTime trialStartDate,
@@ -487,18 +543,17 @@ class FirestoreService {
     int extraSeats = 0,
   }) async {
     try {
-      await _db
-          .collection('saas_metrics')
-          .doc('metrics_current')
-          .set({
-        'subscription_status': status,
-        'trial_start_date':    Timestamp.fromDate(trialStartDate),
-        'trial_end_date':      Timestamp.fromDate(trialEndDate),
-        'purchased_seats':     purchasedSeats,
-        'extra_seats':         extraSeats,
-        if (stripeCustomerId != null)     'stripe_customer_id':     stripeCustomerId,
-        if (stripeSubscriptionId != null) 'stripe_subscription_id': stripeSubscriptionId,
-        'updated_at': FieldValue.serverTimestamp(),
+      await _db.collection('companies').doc(_companyId).set({
+        'subscription': {
+          'subscription_status': status,
+          'trial_start_date':    Timestamp.fromDate(trialStartDate),
+          'trial_end_date':      Timestamp.fromDate(trialEndDate),
+          'purchased_seats':     purchasedSeats,
+          'extra_seats':         extraSeats,
+          if (stripeCustomerId     != null) 'stripe_customer_id':     stripeCustomerId,
+          if (stripeSubscriptionId != null) 'stripe_subscription_id': stripeSubscriptionId,
+          'updated_at': FieldValue.serverTimestamp(),
+        },
       }, SetOptions(merge: true));
     } catch (e) {
       if (kDebugMode) debugPrint('FirestoreService saveSubscription error: $e');

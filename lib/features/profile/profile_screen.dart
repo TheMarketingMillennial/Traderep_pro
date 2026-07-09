@@ -300,20 +300,16 @@ class ProfileScreen extends StatelessWidget {
             icon: Icons.grid_view_rounded,
             title: 'Photo Templates',
             subtitle: '${state.templates.length} templates configured',
-            onTap: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text('Photo template editor coming soon'),
-              behavior: SnackBarBehavior.floating,
-              duration: Duration(seconds: 2),
+            onTap: () => Navigator.push(context, MaterialPageRoute(
+              builder: (_) => const PhotoLibraryScreen(),
             )),
           ),
           _SettingsTile(
             icon: Icons.notifications_rounded,
             title: 'Review Request Settings',
-            subtitle: 'SMS / Email timing and templates',
-            onTap: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text('Review request settings coming soon'),
-              behavior: SnackBarBehavior.floating,
-              duration: Duration(seconds: 2),
+            subtitle: 'SMS and email notification preferences',
+            onTap: () => Navigator.push(context, MaterialPageRoute(
+              builder: (_) => const HelpSupportScreen(),
             )),
           ),
           _SettingsTile(

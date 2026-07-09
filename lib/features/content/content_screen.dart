@@ -468,16 +468,6 @@ class _ContentCardState extends State<_ContentCard> {
                     compact: true,
                     onTap: () => showPublishSheet(context, post: widget.post),
                   ),
-                  const SizedBox(height: 8),
-                  GoldButton(
-                    label: 'Schedule for Later',
-                    icon: Icons.schedule_rounded,
-                    outlined: true,
-                    compact: true,
-                    onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Scheduling feature coming soon'), backgroundColor: TRColors.navyMid),
-                    ),
-                  ),
                 ],
               ],
             ),

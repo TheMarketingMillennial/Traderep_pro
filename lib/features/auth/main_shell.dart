@@ -51,7 +51,8 @@ class _MainShellState extends State<MainShell> {
     final firestoreLoaded = state.firestoreReady;
     final isBlocked = firestoreLoaded && (
         (sub.status == SubscriptionStatus.trial && sub.trialDaysRemaining <= 0) ||
-        sub.status == SubscriptionStatus.cancelled
+        sub.status == SubscriptionStatus.cancelled ||
+        sub.status == SubscriptionStatus.pastDue
     );
 
     // Still loading — show spinner, not the gate
@@ -227,11 +228,8 @@ class _TrialExpiredGate extends StatelessWidget {
   final ActiveSubscription subscription;
   const _TrialExpiredGate({required this.subscription});
 
-  bool get _isExpiredTrial =>
-      subscription.status == SubscriptionStatus.trial &&
-      subscription.trialDaysRemaining <= 0;
-
-  bool get _isCancelled => subscription.status == SubscriptionStatus.cancelled;
+  bool get _isCancelled  => subscription.status == SubscriptionStatus.cancelled;
+  bool get _isPastDue    => subscription.status == SubscriptionStatus.pastDue;
 
   @override
   Widget build(BuildContext context) {
@@ -257,9 +255,11 @@ class _TrialExpiredGate extends StatelessWidget {
 
               // Headline
               Text(
-                _isCancelled
-                    ? 'Subscription Cancelled'
-                    : 'Your Free Trial Has Ended',
+                _isPastDue
+                    ? 'Payment Failed'
+                    : _isCancelled
+                        ? 'Subscription Cancelled'
+                        : 'Your Free Trial Has Ended',
                 style: const TextStyle(
                   color: TRColors.white,
                   fontSize: 26,
@@ -272,9 +272,11 @@ class _TrialExpiredGate extends StatelessWidget {
 
               // Subtext
               Text(
-                _isCancelled
-                    ? 'Your TradeRep subscription has been cancelled. Reactivate to keep growing your reputation.'
-                    : 'Your 14-day trial has ended. Pick a plan below — your jobs, photos, and data are all saved.',
+                _isPastDue
+                    ? 'We were unable to charge your card. Please update your payment method to restore access.'
+                    : _isCancelled
+                        ? 'Your TradeRep subscription has been cancelled. Reactivate to keep growing your reputation.'
+                        : 'Your 14-day trial has ended. Subscribe below to continue — your jobs, photos, and data are all saved.',
                 style: const TextStyle(
                   color: TRColors.grayLight,
                   fontSize: 15,
@@ -284,37 +286,36 @@ class _TrialExpiredGate extends StatelessWidget {
               ),
               const SizedBox(height: 32),
 
-              // What they'll lose / keep callout
-              if (_isExpiredTrial || _isCancelled)
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: TRColors.cardDark,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: TRColors.divider),
-                  ),
-                  child: Column(
-                    children: [
-                      _GatePoint(
-                        icon: Icons.check_circle_rounded,
-                        color: TRColors.success,
-                        text: 'All your jobs and photos are safe',
-                      ),
-                      const SizedBox(height: 8),
-                      _GatePoint(
-                        icon: Icons.check_circle_rounded,
-                        color: TRColors.success,
-                        text: 'Your review history is preserved',
-                      ),
-                      const SizedBox(height: 8),
-                      _GatePoint(
-                        icon: Icons.pause_circle_rounded,
-                        color: TRColors.warning,
-                        text: 'New job creation paused until reactivated',
-                      ),
-                    ],
-                  ),
+              // What they'll keep / lose callout
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: TRColors.cardDark,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: TRColors.divider),
                 ),
+                child: Column(
+                  children: [
+                    _GatePoint(
+                      icon: Icons.check_circle_rounded,
+                      color: TRColors.success,
+                      text: 'All your jobs and photos are safe',
+                    ),
+                    const SizedBox(height: 8),
+                    _GatePoint(
+                      icon: Icons.check_circle_rounded,
+                      color: TRColors.success,
+                      text: 'Your review history is preserved',
+                    ),
+                    const SizedBox(height: 8),
+                    _GatePoint(
+                      icon: Icons.pause_circle_rounded,
+                      color: TRColors.warning,
+                      text: 'New activity paused until reactivated',
+                    ),
+                  ],
+                ),
+              ),
 
               const SizedBox(height: 32),
 
@@ -331,11 +332,16 @@ class _TrialExpiredGate extends StatelessWidget {
                     ),
                     elevation: 0,
                   ),
-                  icon: const Icon(Icons.rocket_launch_rounded, size: 20),
+                  icon: Icon(
+                    _isPastDue ? Icons.credit_card_rounded : Icons.rocket_launch_rounded,
+                    size: 20,
+                  ),
                   label: Text(
-                    _isCancelled
-                        ? 'Reactivate Subscription'
-                        : 'Choose a Plan to Continue',
+                    _isPastDue
+                        ? 'Update Payment Method'
+                        : _isCancelled
+                            ? 'Reactivate Subscription'
+                            : 'Subscribe to Continue',
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w800,

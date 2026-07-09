@@ -27,6 +27,7 @@ class AppState extends ChangeNotifier {
   StreamSubscription<List<ProjectTemplate>>? _templatesSub;
   StreamSubscription<List<PhotoSubmission>>? _photoSubmissionsSub;
   StreamSubscription<List<TeamInvite>>? _pendingInvitesSub;
+  StreamSubscription<ActiveSubscription>? _subscriptionSub;
 
   // ─── Auth State ─────────────────────────────────────────────────────────────
   bool _isLoggedIn = false;
@@ -1174,6 +1175,26 @@ class AppState extends ChangeNotifier {
         if (kDebugMode) debugPrint('PhotoSubmissions stream error: $e');
       });
 
+      // Live subscription stream — picks up Stripe webhook changes
+      // (trial→active on first payment, past_due on card failure, etc.)
+      // without requiring an app restart.
+      _subscriptionSub = _fs.subscriptionStream().listen((sub) {
+        // Only overwrite if Firestore returns a real status (not 'none').
+        // 'none' means the company doc exists but has no subscription map yet —
+        // that's normal for the instant after account creation, before
+        // startTrial() writes the first record.
+        if (sub.status != SubscriptionStatus.none) {
+          _subscription = sub;
+          notifyListeners();
+          if (kDebugMode) {
+            debugPrint('[AppState] subscriptionStream → status: ${sub.status.name}, '
+                'trialEnd: ${sub.trialEndDate}, days: ${sub.trialDaysRemaining}');
+          }
+        }
+      }, onError: (e) {
+        if (kDebugMode) debugPrint('Subscription stream error: $e');
+      });
+
       _firestoreReady = true;
       notifyListeners();
     } catch (e) {
@@ -1192,6 +1213,7 @@ class AppState extends ChangeNotifier {
     _templatesSub?.cancel();
     _photoSubmissionsSub?.cancel();
     _pendingInvitesSub?.cancel();
+    _subscriptionSub?.cancel();
   }
 
   @override
