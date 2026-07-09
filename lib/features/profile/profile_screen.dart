@@ -307,14 +307,6 @@ class ProfileScreen extends StatelessWidget {
             )),
           ),
           _SettingsTile(
-            icon: Icons.notifications_rounded,
-            title: 'Review Request Settings',
-            subtitle: 'SMS and email notification preferences',
-            onTap: () => Navigator.push(context, MaterialPageRoute(
-              builder: (_) => const HelpSupportScreen(),
-            )),
-          ),
-          _SettingsTile(
             icon: Icons.credit_card_rounded,
             title: 'Manage Subscription',
             subtitle: 'Billing, plan upgrades, invoices',
