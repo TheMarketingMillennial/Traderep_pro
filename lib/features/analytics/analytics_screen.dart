@@ -4,8 +4,7 @@ import '../../core/theme/app_theme.dart';
 import '../../shared/services/app_state.dart';
 import '../../shared/widgets/tr_widgets.dart';
 import '../../shared/models/models.dart';
-import '../pricing/trial_widgets.dart';
-import '../pricing/pricing_models.dart';
+
 
 class AnalyticsScreen extends StatelessWidget {
   const AnalyticsScreen({super.key});
@@ -14,10 +13,10 @@ class AnalyticsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final analytics = state.analytics;
-    final tier = state.subscription.tier;
-    final canAdvanced = FeatureAccess.canAccess(tier, 'advanced_analytics');
-    final canCrew = FeatureAccess.canAccess(tier, 'crew_performance');
-    final canReputation = FeatureAccess.canAccess(tier, 'reputation_scoring');
+    // Single plan — all analytics features are available
+    const canAdvanced    = true;
+    const canCrew        = true;
+    const canReputation  = true;
 
     return Scaffold(
       backgroundColor: TRColors.navyDeep,
@@ -28,42 +27,15 @@ class AnalyticsScreen extends StatelessWidget {
             SliverToBoxAdapter(child: _buildKPIs(state)),
             SliverToBoxAdapter(child: _buildChart(analytics)),
             SliverToBoxAdapter(child: _buildReviewFunnel(state)),
-            // Crew Performance — locked for Starter
-            SliverToBoxAdapter(
-              child: canCrew
-                ? _buildTopPerformers(state)
-                : Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-                    child: LockedFeatureGate(
-                      featureKey: 'crew_performance',
-                      child: _buildTopPerformers(state),
-                    ),
-                  ),
-            ),
-            // Google Activity — locked for Starter
-            SliverToBoxAdapter(
-              child: canAdvanced
-                ? _buildGoogleActivity(state)
-                : Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-                    child: LockedFeatureGate(
-                      featureKey: 'advanced_analytics',
-                      child: _buildGoogleActivity(state),
-                    ),
-                  ),
-            ),
-            // Reputation Score — Pro only
-            SliverToBoxAdapter(
-              child: canReputation
-                ? _buildReputationScore()
-                : Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-                    child: LockedFeatureGate(
-                      featureKey: 'reputation_scoring',
-                      child: _buildReputationScore(),
-                    ),
-                  ),
-            ),
+            // Crew Performance
+            if (canCrew)
+              SliverToBoxAdapter(child: _buildTopPerformers(state)),
+            // Google Activity
+            if (canAdvanced)
+              SliverToBoxAdapter(child: _buildGoogleActivity(state)),
+            // Reputation Score
+            if (canReputation)
+              SliverToBoxAdapter(child: _buildReputationScore()),
             const SliverToBoxAdapter(child: SizedBox(height: 100)),
           ],
         ),

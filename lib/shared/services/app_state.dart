@@ -805,101 +805,107 @@ class AppState extends ChangeNotifier {
   }
 
   // ─── Subscription ─────────────────────────────────────────────────────────
+  // ─── Subscription (single plan — no tiers) ─────────────────────────────────
   ActiveSubscription _subscription = ActiveSubscription.none;
   ActiveSubscription get subscription => _subscription;
-  PlanTier get currentTier => _subscription.tier;
   bool get isInTrial => _subscription.isInTrial;
   int get trialDaysRemaining => _subscription.trialDaysRemaining;
 
-  bool canAccess(String featureKey) {
-    if (_subscription.isInTrial) {
-      return FeatureAccess.canAccess(PlanTier.growth, featureKey);
-    }
-    if (_subscription.status == SubscriptionStatus.none) {
-      return FeatureAccess.canAccess(PlanTier.starter, featureKey);
-    }
-    return FeatureAccess.canAccess(_subscription.tier, featureKey);
-  }
+  /// All features are available on the single plan.
+  /// Kept for API compatibility — always returns true when app is accessible.
+  bool canAccess(String featureKey) => _subscription.canUseApp;
 
-  void selectPlan(PlanTier tier) {
-    _subscription = ActiveSubscription(
-      tier: tier,
-      status: SubscriptionStatus.trial,
-      trialStartDate: DateTime.now(),
-      trialEndDate: DateTime.now().add(const Duration(days: 14)),
-    );
-    notifyListeners();
-  }
-
-  void upgradePlan(PlanTier tier) {
-    _subscription = ActiveSubscription(
-      tier: tier,
-      status: SubscriptionStatus.active,
-      trialStartDate: _subscription.trialStartDate,
-      trialEndDate: _subscription.trialEndDate,
-      billingStartDate: DateTime.now(),
-      nextBillingDate: DateTime.now().add(const Duration(days: 30)),
-      billingHistory: _subscription.billingHistory,
-    );
-    notifyListeners();
-  }
-
-  /// Starts a trial in local state AND persists to Firestore.
-  /// Used on web (where Stripe SDK is unavailable) and as a fallback.
-  void startTrial(PlanTier tier) {
-    final now = DateTime.now();
-    final trialEnd = now.add(const Duration(days: 14));
-    _subscription = ActiveSubscription(
-      tier: tier,
-      status: SubscriptionStatus.trial,
-      trialStartDate: now,
-      trialEndDate: trialEnd,
-    );
-    notifyListeners();
-
-    // Persist to Firestore so the trial survives app restarts
-    _fs.saveSubscription(
-      tier: tier.name,
-      status: SubscriptionStatus.trial.name,
-      trialStartDate: now,
-      trialEndDate: trialEnd,
-    ).catchError((e) {
-      if (kDebugMode) debugPrint('[AppState] startTrial saveSubscription error: $e');
-    });
-  }
-
-  /// Called after a successful Stripe payment sheet confirmation.
-  /// Updates local state optimistically and persists to Firestore so
-  /// the webhook also has a starting record to merge into.
-  void startTrialWithStripe(
-    PlanTier tier, {
+  /// Starts a 14-day trial (no tier required — single plan).
+  void startTrial({
     String? stripeCustomerId,
     String? stripeSubscriptionId,
   }) {
     final now = DateTime.now();
     final trialEnd = now.add(const Duration(days: 14));
     _subscription = ActiveSubscription(
-      tier: tier,
       status: SubscriptionStatus.trial,
       trialStartDate: now,
       trialEndDate: trialEnd,
       stripeCustomerId: stripeCustomerId,
       stripeSubscriptionId: stripeSubscriptionId,
+      purchasedSeats: TRPlan.includedSeats,
+      extraSeats: 0,
     );
     notifyListeners();
 
-    // Persist to Firestore (fire-and-forget — webhook will also update this)
+    // Persist to Firestore so trial survives app restarts
     _fs.saveSubscription(
-      tier: tier.name,
-      status: 'trial',
+      status: SubscriptionStatus.trial.name,
       trialStartDate: now,
       trialEndDate: trialEnd,
       stripeCustomerId: stripeCustomerId,
       stripeSubscriptionId: stripeSubscriptionId,
     ).catchError((e) {
-      if (kDebugMode) debugPrint('[AppState] saveSubscription error: $e');
+      if (kDebugMode) debugPrint('[AppState] startTrial error: $e');
     });
   }
+
+  /// Activates a paid subscription after Stripe checkout.
+  void activateSubscription({
+    String? stripeCustomerId,
+    String? stripeSubscriptionId,
+    int extraSeats = 0,
+  }) {
+    final now = DateTime.now();
+    _subscription = _subscription.copyWith(
+      status: SubscriptionStatus.active,
+      stripeCustomerId: stripeCustomerId,
+      stripeSubscriptionId: stripeSubscriptionId,
+      billingStartDate: now,
+      nextBillingDate: now.add(const Duration(days: 30)),
+      purchasedSeats: TRPlan.includedSeats + extraSeats,
+      extraSeats: extraSeats,
+    );
+    notifyListeners();
+
+    _fs.saveSubscription(
+      status: SubscriptionStatus.active.name,
+      trialStartDate: _subscription.trialStartDate,
+      trialEndDate: _subscription.trialEndDate,
+      stripeCustomerId: stripeCustomerId,
+      stripeSubscriptionId: stripeSubscriptionId,
+      purchasedSeats: TRPlan.includedSeats + extraSeats,
+      extraSeats: extraSeats,
+    ).catchError((e) {
+      if (kDebugMode) debugPrint('[AppState] activateSubscription error: $e');
+    });
+  }
+
+  /// Adds extra seats (called after Stripe seat upgrade confirms).
+  void addSeats(int count) {
+    final newExtra = _subscription.extraSeats + count;
+    _subscription = _subscription.copyWith(
+      purchasedSeats: TRPlan.includedSeats + newExtra,
+      extraSeats: newExtra,
+    );
+    notifyListeners();
+
+    _fs.saveSubscription(
+      status: _subscription.status.name,
+      trialStartDate: _subscription.trialStartDate,
+      trialEndDate: _subscription.trialEndDate,
+      stripeCustomerId: _subscription.stripeCustomerId,
+      stripeSubscriptionId: _subscription.stripeSubscriptionId,
+      purchasedSeats: _subscription.purchasedSeats,
+      extraSeats: newExtra,
+    ).catchError((e) {
+      if (kDebugMode) debugPrint('[AppState] addSeats error: $e');
+    });
+  }
+
+  // ─── Legacy compat: startTrialWithStripe → startTrial ─────────────────────
+  void startTrialWithStripe({
+    String? stripeCustomerId,
+    String? stripeSubscriptionId,
+  }) => startTrial(
+    stripeCustomerId: stripeCustomerId,
+    stripeSubscriptionId: stripeSubscriptionId,
+  );
 
   // ─── Login ─────────────────────────────────────────────────────────────────
 
@@ -947,6 +953,35 @@ class AppState extends ChangeNotifier {
     _isLoggedIn = true;
     notifyListeners();
     await _initFirestoreStreams();
+  }
+
+  /// Saves admin preference selections to Firestore.
+  /// Called from the onboarding preferences step.
+  void saveAdminPreferences(List<String> preferences) {
+    // Update local company if loaded
+    if (_company != null) {
+      _company = Company(
+        id: _company!.id,
+        name: _company!.name,
+        logoUrl: _company!.logoUrl,
+        tradeCategory: _company!.tradeCategory,
+        serviceArea: _company!.serviceArea,
+        phone: _company!.phone,
+        website: _company!.website,
+        teamSize: _company!.teamSize,
+        googleConnected: _company!.googleConnected,
+        googleBusinessId: _company!.googleBusinessId,
+        googleReviewLink: _company!.googleReviewLink,
+        gbpLocationId: _company!.gbpLocationId,
+        createdAt: _company!.createdAt,
+        adminPreferences: preferences,
+      );
+      notifyListeners();
+    }
+    // Persist to Firestore (fire-and-forget)
+    _fs.updateAdminPreferences(preferences).catchError((e) {
+      if (kDebugMode) debugPrint('[AppState] saveAdminPreferences error: $e');
+    });
   }
 
   /// Signs out of Firebase and resets all local state.
@@ -1008,25 +1043,9 @@ class AppState extends ChangeNotifier {
       });
 
       if (fsSub.status == SubscriptionStatus.none) {
-        // Brand new user — auto-start Growth trial and persist it
+        // Brand new user — auto-start 14-day trial and persist it
         if (kDebugMode) debugPrint('[AppState] New user — auto-starting 14-day trial');
-        final now = DateTime.now();
-        final trialEnd = now.add(const Duration(days: 14));
-        _subscription = ActiveSubscription(
-          tier: PlanTier.growth,
-          status: SubscriptionStatus.trial,
-          trialStartDate: now,
-          trialEndDate: trialEnd,
-        );
-        // Persist so Firestore has a record for next login
-        _fs.saveSubscription(
-          tier: PlanTier.growth.name,
-          status: SubscriptionStatus.trial.name,
-          trialStartDate: now,
-          trialEndDate: trialEnd,
-        ).catchError((e) {
-          if (kDebugMode) debugPrint('[AppState] saveSubscription error: $e');
-        });
+        startTrial();
       } else {
         _subscription = fsSub;
       }

@@ -4,8 +4,7 @@ import '../../core/theme/app_theme.dart';
 import '../../shared/services/app_state.dart';
 import '../../shared/widgets/tr_widgets.dart';
 import '../../shared/models/models.dart';
-import '../pricing/trial_widgets.dart';
-import '../pricing/pricing_models.dart';
+
 import 'google_post_sheets.dart';
 
 class ContentScreen extends StatefulWidget {
@@ -33,7 +32,8 @@ class _ContentScreenState extends State<ContentScreen> with SingleTickerProvider
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
-    final hasContentAccess = FeatureAccess.canAccess(state.subscription.tier, 'content_approval');
+    // Single plan — content approval always accessible
+    const hasContentAccess = true;
 
     return Scaffold(
       backgroundColor: TRColors.navyDeep,
@@ -41,16 +41,7 @@ class _ContentScreenState extends State<ContentScreen> with SingleTickerProvider
         child: Column(
           children: [
             _buildHeader(context, state),
-            if (!hasContentAccess)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-                child: UpgradePrompt(
-                  featureKey: 'content_approval',
-                  title: 'Content Approval Dashboard',
-                  description: 'Upgrade to Growth to auto-generate posts from your job photos.',
-                  icon: Icons.auto_awesome_rounded,
-                ),
-              ),
+
             _buildTabs(),
             Expanded(
               child: hasContentAccess
@@ -62,7 +53,7 @@ class _ContentScreenState extends State<ContentScreen> with SingleTickerProvider
                       _buildPublishedTab(context, state),
                     ],
                   )
-                : const _ContentLockedView(),
+                : const Center(child: SizedBox.shrink()),
             ),
           ],
         ),
@@ -461,8 +452,9 @@ class _ContentCardState extends State<_ContentCard> {
   }
 }
 
-// Locked view shown to Starter plan users in Content tab
+// Feature highlight card used in content screen
 class _ContentLockedView extends StatelessWidget {
+  // ignore: unused_element
   const _ContentLockedView();
 
   @override

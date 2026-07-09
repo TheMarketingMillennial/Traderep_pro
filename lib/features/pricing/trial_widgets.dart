@@ -80,7 +80,7 @@ class TrialBanner extends StatelessWidget {
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
-                isUrgent ? 'Subscribe' : 'View Plans',
+                isUrgent ? 'Subscribe' : 'Subscribe',
                 style: TextStyle(
                   color: isUrgent ? TRColors.white : TRColors.navyDeep,
                   fontSize: 12, fontWeight: FontWeight.w800,
@@ -138,185 +138,28 @@ class TrialProgressBar extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 6),
-        Row(children: [
-          const Text('Day 1', style: TextStyle(color: TRColors.grayMid, fontSize: 10)),
-          const Spacer(),
-          const Text('Day 14', style: TextStyle(color: TRColors.grayMid, fontSize: 10)),
+        const Row(children: [
+          Text('Day 1', style: TextStyle(color: TRColors.grayMid, fontSize: 10)),
+          Spacer(),
+          Text('Day 14', style: TextStyle(color: TRColors.grayMid, fontSize: 10)),
         ]),
       ]),
     );
   }
 }
 
-// ─── Locked Feature Gate ──────────────────────────────────────────────────────
-// Wraps any widget and overlays a "Upgrade to unlock" prompt
-class LockedFeatureGate extends StatelessWidget {
-  final String featureKey;
-  final Widget child;
-  final String? customMessage;
-
-  const LockedFeatureGate({
-    super.key,
-    required this.featureKey,
-    required this.child,
-    this.customMessage,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final state = context.watch<AppState>();
-    final canAccess = state.canAccess(featureKey);
-
-    if (canAccess) return child;
-
-    final requiredPlan = FeatureAccess.requiredPlan(featureKey);
-
-    return Stack(
-      children: [
-        // Blurred/dimmed underlying content
-        Opacity(opacity: 0.25, child: child),
-        // Lock overlay
-        Positioned.fill(
-          child: Container(
-            decoration: BoxDecoration(
-              color: TRColors.navyDeep.withValues(alpha: 0.7),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: TRColors.cardMid,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: TRColors.gold.withValues(alpha: 0.4)),
-                    ),
-                    child: const Icon(Icons.lock_rounded, color: TRColors.gold, size: 24),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    customMessage ?? 'Upgrade to unlock.',
-                    style: const TextStyle(color: TRColors.white, fontSize: 14, fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Available on $requiredPlan plan',
-                    style: const TextStyle(color: TRColors.grayLight, fontSize: 12),
-                  ),
-                  const SizedBox(height: 14),
-                  GestureDetector(
-                    onTap: () => Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => const PricingScreen(),
-                    )),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 9),
-                      decoration: BoxDecoration(
-                        color: TRColors.gold,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        'Upgrade to $requiredPlan',
-                        style: const TextStyle(
-                          color: TRColors.navyDeep, fontSize: 13, fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-// ─── Inline Upgrade Prompt ────────────────────────────────────────────────────
-// A small inline card that replaces locked content
-class UpgradePrompt extends StatelessWidget {
-  final String featureKey;
-  final String title;
-  final String description;
-  final IconData icon;
-
-  const UpgradePrompt({
-    super.key,
-    required this.featureKey,
-    required this.title,
-    required this.description,
-    required this.icon,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final state = context.watch<AppState>();
-    if (state.canAccess(featureKey)) return const SizedBox.shrink();
-
-    final requiredPlan = FeatureAccess.requiredPlan(featureKey);
-
-    return GestureDetector(
-      onTap: () => Navigator.push(context, MaterialPageRoute(
-        builder: (_) => const PricingScreen(),
-      )),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: TRColors.cardDark,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: TRColors.gold.withValues(alpha: 0.3)),
-        ),
-        child: Row(children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: TRColors.goldDim,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(icon, color: TRColors.gold, size: 20),
-          ),
-          const SizedBox(width: 12),
-          Expanded(child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title, style: const TextStyle(
-                color: TRColors.white, fontSize: 14, fontWeight: FontWeight.w700,
-              )),
-              Text(description, style: const TextStyle(
-                color: TRColors.grayMid, fontSize: 12,
-              )),
-            ],
-          )),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: TRColors.gold,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              '↑ $requiredPlan',
-              style: const TextStyle(
-                color: TRColors.navyDeep, fontSize: 11, fontWeight: FontWeight.w800,
-              ),
-            ),
-          ),
-        ]),
-      ),
-    );
-  }
-}
-
 // ─── Plan Badge (shown on dashboard header) ───────────────────────────────────
+// Shows subscription status — Trial or Active — without tier references.
 class PlanBadge extends StatelessWidget {
   const PlanBadge({super.key});
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
-    final plan = state.subscription.plan;
+    final sub = state.subscription;
     final isTrialing = state.isInTrial;
+    final color = isTrialing ? TRColors.gold : TRColors.success;
+    final label = isTrialing ? 'TradeRep Pro · Trial' : 'TradeRep Pro';
 
     return GestureDetector(
       onTap: () => Navigator.push(context, MaterialPageRoute(
@@ -325,21 +168,36 @@ class PlanBadge extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
-          color: plan.accentColor.withValues(alpha: 0.12),
+          color: color.withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: plan.accentColor.withValues(alpha: 0.4)),
+          border: Border.all(color: color.withValues(alpha: 0.4)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.workspace_premium_rounded, color: plan.accentColor, size: 13),
+            Icon(Icons.workspace_premium_rounded, color: color, size: 13),
             const SizedBox(width: 4),
             Text(
-              isTrialing ? '${plan.name} Trial' : plan.name,
+              label,
               style: TextStyle(
-                color: plan.accentColor, fontSize: 11, fontWeight: FontWeight.w700,
+                color: color, fontSize: 11, fontWeight: FontWeight.w700,
               ),
             ),
+            // Seat info for active subscriptions
+            if (sub.isActive) ...[
+              const SizedBox(width: 6),
+              Container(
+                width: 1, height: 10,
+                color: color.withValues(alpha: 0.3),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                '${sub.purchasedSeats} seats',
+                style: TextStyle(
+                  color: color.withValues(alpha: 0.8), fontSize: 10, fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -355,7 +213,8 @@ class SubscriptionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final sub = state.subscription;
-    final plan = sub.plan;
+    // Single plan: always TRColors.gold accent
+    const color = TRColors.gold;
 
     return GestureDetector(
       onTap: () => Navigator.push(context, MaterialPageRoute(
@@ -364,30 +223,35 @@ class SubscriptionCard extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          gradient: LinearGradient(
+          gradient: const LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              plan.accentColor.withValues(alpha: 0.12),
+              Color(0x1FF7BE1A), // gold @ ~12%
               TRColors.cardDark,
             ],
           ),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: plan.accentColor.withValues(alpha: 0.35)),
+          border: Border.all(color: color.withValues(alpha: 0.35)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(children: [
-              Icon(Icons.workspace_premium_rounded, color: plan.accentColor, size: 22),
+              const Icon(Icons.workspace_premium_rounded, color: color, size: 22),
               const SizedBox(width: 8),
-              Text('${plan.name} Plan', style: const TextStyle(
+              const Text('TradeRep Pro', style: TextStyle(
                 color: TRColors.white, fontSize: 16, fontWeight: FontWeight.w800,
               )),
               const Spacer(),
               _SubStatusBadge(status: sub.status),
             ]),
             const SizedBox(height: 8),
+
+            // Seat summary
+            _SeatSummaryRow(sub: sub),
+            const SizedBox(height: 8),
+
             if (sub.isInTrial) ...[
               Text('Trial ends in ${sub.trialDaysRemaining} days', style: const TextStyle(
                 color: TRColors.grayLight, fontSize: 13,
@@ -399,7 +263,7 @@ class SubscriptionCard extends StatelessWidget {
                   value: sub.trialProgress,
                   backgroundColor: TRColors.divider,
                   valueColor: AlwaysStoppedAnimation<Color>(
-                    sub.trialDaysRemaining <= 3 ? TRColors.error : plan.accentColor,
+                    sub.trialDaysRemaining <= 3 ? TRColors.error : color,
                   ),
                   minHeight: 5,
                 ),
@@ -407,8 +271,8 @@ class SubscriptionCard extends StatelessWidget {
             ] else ...[
               Text(
                 sub.nextBillingDate != null
-                  ? 'Next billing: ${_formatDate(sub.nextBillingDate!)}'
-                  : '\$${plan.monthlyPrice}/month',
+                  ? 'Next billing: ${_formatDate(sub.nextBillingDate!)} · \$${sub.currentMonthlyTotal.toStringAsFixed(2)}/mo'
+                  : '\$${sub.currentMonthlyTotal.toStringAsFixed(2)}/month',
                 style: const TextStyle(color: TRColors.grayLight, fontSize: 13),
               ),
             ],
@@ -419,12 +283,12 @@ class SubscriptionCard extends StatelessWidget {
                 child: Container(
                   height: 36,
                   decoration: BoxDecoration(
-                    color: plan.accentColor.withValues(alpha: 0.15),
+                    color: color.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: plan.accentColor.withValues(alpha: 0.4)),
+                    border: Border.all(color: color.withValues(alpha: 0.4)),
                   ),
-                  child: Center(child: Text('View Plans', style: TextStyle(
-                    color: plan.accentColor, fontSize: 13, fontWeight: FontWeight.w700,
+                  child: Center(child: Text('Manage Plan', style: TextStyle(
+                    color: color, fontSize: 13, fontWeight: FontWeight.w700,
                   ))),
                 ),
               )),
@@ -456,6 +320,28 @@ class SubscriptionCard extends StatelessWidget {
   }
 }
 
+// ─── Seat Summary Row ─────────────────────────────────────────────────────────
+class _SeatSummaryRow extends StatelessWidget {
+  final ActiveSubscription sub;
+  const _SeatSummaryRow({required this.sub});
+
+  @override
+  Widget build(BuildContext context) {
+    final total = sub.purchasedSeats;
+    final extra = sub.extraSeats;
+    return Row(children: [
+      const Icon(Icons.people_rounded, color: TRColors.grayMid, size: 14),
+      const SizedBox(width: 6),
+      Text(
+        '$total seat${total == 1 ? '' : 's'} '
+        '(${TRPlan.includedSeats} included'
+        '${extra > 0 ? ' + $extra extra' : ''})',
+        style: const TextStyle(color: TRColors.grayLight, fontSize: 12),
+      ),
+    ]);
+  }
+}
+
 class _SubStatusBadge extends StatelessWidget {
   final SubscriptionStatus status;
   const _SubStatusBadge({required this.status});
@@ -463,11 +349,11 @@ class _SubStatusBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final configs = {
-      SubscriptionStatus.trial:     (TRColors.gold, 'TRIAL'),
-      SubscriptionStatus.active:    (TRColors.success, 'ACTIVE'),
-      SubscriptionStatus.pastDue:   (TRColors.error, 'PAST DUE'),
-      SubscriptionStatus.cancelled: (TRColors.grayMid, 'CANCELLED'),
-      SubscriptionStatus.none:      (TRColors.grayMid, 'INACTIVE'),
+      SubscriptionStatus.trial:     (TRColors.gold,    'TRIAL'),
+      SubscriptionStatus.active:    (TRColors.success,  'ACTIVE'),
+      SubscriptionStatus.pastDue:   (TRColors.error,    'PAST DUE'),
+      SubscriptionStatus.cancelled: (TRColors.grayMid,  'CANCELLED'),
+      SubscriptionStatus.none:      (TRColors.grayMid,  'INACTIVE'),
     };
     final cfg = configs[status] ?? (TRColors.grayMid, 'UNKNOWN');
     return Container(
@@ -492,7 +378,6 @@ class BillingScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final sub = state.subscription;
-    final plan = sub.plan;
 
     return Scaffold(
       backgroundColor: TRColors.navyDeep,
@@ -511,25 +396,40 @@ class BillingScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Current plan
-            SubscriptionCard(),
+            // Current plan card
+            const SubscriptionCard(),
             const SizedBox(height: 20),
 
-            // Metrics
+            // Metrics row
             const Text('SUBSCRIPTION METRICS', style: TextStyle(
               color: TRColors.grayMid, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.8,
             )),
             const SizedBox(height: 10),
             Row(children: [
-              Expanded(child: _MetricCard(label: 'MRR', value: '\$${plan.monthlyPrice}', icon: Icons.attach_money_rounded, color: TRColors.success)),
+              Expanded(child: _MetricCard(
+                label: 'MRR',
+                value: '\$${sub.currentMonthlyTotal.toStringAsFixed(2)}',
+                icon: Icons.attach_money_rounded,
+                color: TRColors.success,
+              )),
               const SizedBox(width: 10),
-              Expanded(child: _MetricCard(label: 'Plan', value: plan.name, icon: Icons.workspace_premium_rounded, color: plan.accentColor)),
+              Expanded(child: _MetricCard(
+                label: 'Seats',
+                value: '${sub.purchasedSeats}',
+                icon: Icons.people_rounded,
+                color: TRColors.gold,
+              )),
               const SizedBox(width: 10),
-              Expanded(child: _MetricCard(label: 'Status', value: sub.status.displayName, icon: Icons.circle, color: sub.isInTrial ? TRColors.gold : TRColors.success)),
+              Expanded(child: _MetricCard(
+                label: 'Status',
+                value: sub.status.displayName,
+                icon: Icons.circle,
+                color: sub.isInTrial ? TRColors.gold : TRColors.success,
+              )),
             ]),
             const SizedBox(height: 20),
 
-            // Stripe integration note
+            // Stripe info card
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -549,14 +449,14 @@ class BillingScreen extends StatelessWidget {
                   ]),
                   const SizedBox(height: 8),
                   const Text(
-                    'TradeRep uses Stripe for secure subscription billing. Your payment information is encrypted and never stored on our servers.',
+                    'TradeRep Pro uses Stripe for secure subscription billing. Your payment information is encrypted and never stored on our servers.',
                     style: TextStyle(color: TRColors.grayLight, fontSize: 13, height: 1.5),
                   ),
                   const SizedBox(height: 12),
                   ...[
                     ('Recurring billing', 'Automatic monthly charges via Stripe'),
                     ('Trial management', '14-day free trial with grace period'),
-                    ('Upgrades/downgrades', 'Prorated billing adjustments'),
+                    ('Seat management', 'Automatically adjusts when you invite team'),
                     ('Failed payment handling', 'Retry logic + email notifications'),
                     ('Billing history', 'Full invoice records via Stripe Portal'),
                   ].map((item) => Padding(
@@ -578,6 +478,34 @@ class BillingScreen extends StatelessWidget {
             ),
             const SizedBox(height: 16),
 
+            // Seat pricing note
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: TRColors.goldDim,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: TRColors.gold.withValues(alpha: 0.25)),
+              ),
+              child: Row(children: [
+                const Icon(Icons.people_alt_rounded, color: TRColors.gold, size: 18),
+                const SizedBox(width: 10),
+                Expanded(child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Seat Pricing', style: TextStyle(
+                      color: TRColors.gold, fontSize: 13, fontWeight: FontWeight.w700,
+                    )),
+                    Text(
+                      '\$${TRPlan.monthlyPrice.toStringAsFixed(0)}/mo includes ${TRPlan.includedSeats} seats · '
+                      '\$${TRPlan.extraSeatPrice.toStringAsFixed(2)}/mo per additional seat',
+                      style: const TextStyle(color: TRColors.grayLight, fontSize: 12),
+                    ),
+                  ],
+                )),
+              ]),
+            ),
+            const SizedBox(height: 16),
+
             // Billing history
             const Text('BILLING HISTORY', style: TextStyle(
               color: TRColors.grayMid, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.8,
@@ -591,7 +519,8 @@ class BillingScreen extends StatelessWidget {
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: TRColors.divider),
                 ),
-                child: const Center(child: Text('No billing history yet. Your first invoice will appear here.',
+                child: const Center(child: Text(
+                  'No billing history yet. Your first invoice will appear here.',
                   style: TextStyle(color: TRColors.grayMid, fontSize: 13),
                   textAlign: TextAlign.center,
                 )),
@@ -607,17 +536,10 @@ class BillingScreen extends StatelessWidget {
             )),
             const SizedBox(height: 10),
             _BillingAction(
-              icon: Icons.upgrade_rounded,
-              label: 'Upgrade Plan',
-              subtitle: 'Move to a higher tier',
+              icon: Icons.people_alt_rounded,
+              label: 'Add Team Seats',
+              subtitle: '\$${TRPlan.extraSeatPrice.toStringAsFixed(2)}/month per additional member',
               color: TRColors.success,
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PricingScreen())),
-            ),
-            _BillingAction(
-              icon: Icons.swap_horiz_rounded,
-              label: 'Change Plan',
-              subtitle: 'Switch to a different tier',
-              color: TRColors.info,
               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PricingScreen())),
             ),
             _BillingAction(
@@ -649,17 +571,23 @@ class BillingScreen extends StatelessWidget {
       backgroundColor: TRColors.cardDark,
       title: const Text('Cancel Subscription?', style: TextStyle(color: TRColors.white, fontWeight: FontWeight.w700)),
       content: const Text(
-        'Your access continues until the end of the current billing period. You can resubscribe at any time.',
+        'Your access continues until the end of the current billing period. You can resubscribe at any time — your data is always preserved.',
         style: TextStyle(color: TRColors.grayLight, fontSize: 14, height: 1.5),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Keep Subscription', style: TextStyle(color: TRColors.gold, fontWeight: FontWeight.w700))),
-        TextButton(onPressed: () {
-          Navigator.pop(context);
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Subscription cancellation submitted.'), backgroundColor: TRColors.error),
-          );
-        }, child: const Text('Cancel Anyway', style: TextStyle(color: TRColors.error))),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Keep Subscription', style: TextStyle(color: TRColors.gold, fontWeight: FontWeight.w700)),
+        ),
+        TextButton(
+          onPressed: () {
+            Navigator.pop(context);
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Subscription cancellation submitted.'), backgroundColor: TRColors.error),
+            );
+          },
+          child: const Text('Cancel Anyway', style: TextStyle(color: TRColors.error)),
+        ),
       ],
     ));
   }

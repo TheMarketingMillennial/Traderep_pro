@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import '../../core/theme/app_theme.dart';
 import '../../shared/services/app_state.dart';
 import '../../features/pricing/pricing_screen.dart';
-import '../../features/pricing/pricing_models.dart';
+import '../../features/pricing/pricing_models.dart'; // ActiveSubscription, SubscriptionStatus
 import '../dashboard/dashboard_screen.dart' show DashboardScreen;
 import '../jobs/jobs_screen.dart';
 import '../photos/photos_screen.dart';

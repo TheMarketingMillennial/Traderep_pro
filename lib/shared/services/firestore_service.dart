@@ -67,6 +67,18 @@ class FirestoreService {
     });
   }
 
+  /// Persists admin preference selections from onboarding.
+  Future<void> updateAdminPreferences(List<String> preferences) async {
+    try {
+      await _db.collection('companies').doc(_companyId).set({
+        'admin_preferences': preferences,
+        'updated_at': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (e) {
+      if (kDebugMode) debugPrint('FirestoreService updateAdminPreferences error: $e');
+    }
+  }
+
   Future<void> updateGoogleConnected(bool connected) async {
     await _db.collection('companies').doc(_companyId).update({
       'google_connected': connected,
@@ -324,13 +336,7 @@ class FirestoreService {
 
       if (d == null) return ActiveSubscription.none;
 
-      final tierStr   = (d['plan_tier']           as String?) ?? 'growth';
       final statusStr = (d['subscription_status'] as String?) ?? 'trial';
-
-      final tier = PlanTier.values.firstWhere(
-        (t) => t.name == tierStr,
-        orElse: () => PlanTier.growth,
-      );
       final status = SubscriptionStatus.values.firstWhere(
         (s) => s.name == statusStr,
         orElse: () => SubscriptionStatus.trial,
@@ -363,13 +369,17 @@ class FirestoreService {
         );
       }).toList();
 
+      final purchasedSeats = (d['purchased_seats'] as int?) ?? TRPlan.includedSeats;
+      final extraSeats     = (d['extra_seats']     as int?) ?? 0;
+
       return ActiveSubscription(
-        tier: tier,
         status: status,
         trialStartDate: trialStart,
         trialEndDate: trialEnd,
         stripeCustomerId: d['stripe_customer_id'] as String?,
         stripeSubscriptionId: d['stripe_subscription_id'] as String?,
+        purchasedSeats: purchasedSeats,
+        extraSeats: extraSeats,
         billingHistory: billingHistory,
       );
     } catch (e) {
@@ -378,28 +388,29 @@ class FirestoreService {
     }
   }
 
-  /// Persists a newly created Stripe subscription to Firestore so the
-  /// webhook and future app launches can read the correct state.
+  /// Persists subscription state to Firestore.
+  /// Single plan — no tier field required.
   Future<void> saveSubscription({
-    required String tier,          // 'starter' | 'growth' | 'pro'
-    required String status,        // 'trial'
+    required String status,
     required DateTime trialStartDate,
     required DateTime trialEndDate,
     String? stripeCustomerId,
     String? stripeSubscriptionId,
+    int purchasedSeats = TRPlan.includedSeats,
+    int extraSeats = 0,
   }) async {
     try {
       await _db
           .collection('saas_metrics')
           .doc('metrics_current')
           .set({
-        'plan_tier': tier,
         'subscription_status': status,
-        'trial_start_date': Timestamp.fromDate(trialStartDate),
-        'trial_end_date': Timestamp.fromDate(trialEndDate),
-        if (stripeCustomerId != null) 'stripe_customer_id': stripeCustomerId,
-        if (stripeSubscriptionId != null)
-          'stripe_subscription_id': stripeSubscriptionId,
+        'trial_start_date':    Timestamp.fromDate(trialStartDate),
+        'trial_end_date':      Timestamp.fromDate(trialEndDate),
+        'purchased_seats':     purchasedSeats,
+        'extra_seats':         extraSeats,
+        if (stripeCustomerId != null)     'stripe_customer_id':     stripeCustomerId,
+        if (stripeSubscriptionId != null) 'stripe_subscription_id': stripeSubscriptionId,
         'updated_at': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
     } catch (e) {
@@ -540,6 +551,11 @@ class FirestoreService {
       // e.g. '11-25' → take first number
       teamSizeInt = int.tryParse(teamSizeRaw.split('-').first) ?? 5;
     }
+    final rawPrefs = d['admin_preferences'];
+    final adminPreferences = rawPrefs is List
+        ? rawPrefs.map((e) => e.toString()).toList()
+        : <String>[];
+
     return Company(
       id: id,
       name: (d['name'] as String?) ?? 'My Company',
@@ -553,6 +569,7 @@ class FirestoreService {
       gbpLocationId: d['gbp_location_id'] as String?,
       teamSize: teamSizeInt,
       createdAt: (d['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      adminPreferences: adminPreferences,
     );
   }
 

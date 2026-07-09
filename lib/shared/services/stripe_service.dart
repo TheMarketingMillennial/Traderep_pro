@@ -45,20 +45,21 @@ class StripeService {
   static Future<StripeResult> startTrialSubscription({
     required String email,
     required String name,
-    required PricingPlan plan,
+    int extraSeats = 0,
   }) async {
     try {
       // ── 1. Call Railway to create subscription + get client secret ──────
-      debugPrint('[Stripe] Creating subscription for $email on ${plan.name}');
+      debugPrint('[Stripe] Creating subscription for $email on ${TRPlan.name}');
       final response = await http
           .post(
             Uri.parse('$_baseUrl/create-subscription'),
             headers: {'Content-Type': 'application/json'},
             body: jsonEncode({
-              'email': email,
-              'name': name,
-              'priceId': plan.stripePriceId,
-              'planName': plan.name,
+              'email':      email,
+              'name':       name,
+              'priceId':    TRPlan.stripePriceId,
+              'planName':   TRPlan.name,
+              'extraSeats': extraSeats,
             }),
           )
           .timeout(const Duration(seconds: 30));

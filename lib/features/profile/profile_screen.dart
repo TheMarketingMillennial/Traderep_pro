@@ -8,6 +8,7 @@ import '../../shared/widgets/tr_widgets.dart';
 import '../../shared/models/models.dart';
 import '../pricing/trial_widgets.dart';
 import '../pricing/pricing_screen.dart';
+import '../photos/photo_library_screen.dart';
 import 'help_support_screen.dart';
 import 'privacy_policy_screen.dart';
 
@@ -211,6 +212,14 @@ class ProfileScreen extends StatelessWidget {
           ),
           _SettingsTile(
             icon: Icons.photo_library_rounded,
+            title: 'Company Photo Library',
+            subtitle: 'View & manage all uploaded photos',
+            onTap: () => Navigator.push(context, MaterialPageRoute(
+              builder: (_) => const PhotoLibraryScreen(),
+            )),
+          ),
+          _SettingsTile(
+            icon: Icons.grid_view_rounded,
             title: 'Photo Templates',
             subtitle: '${state.templates.length} templates configured',
             onTap: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(

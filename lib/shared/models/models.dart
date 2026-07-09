@@ -144,6 +144,11 @@ class Company {
   final String? gbpLocationId;
   final DateTime createdAt;
 
+  /// Admin-selected improvement goals from onboarding.
+  /// Examples: ['More Google Reviews', 'Better Photo Organization', 'Team Accountability']
+  /// Stored in Firestore as 'admin_preferences' (List<String>).
+  final List<String> adminPreferences;
+
   const Company({
     required this.id,
     required this.name,
@@ -158,6 +163,7 @@ class Company {
     this.googleReviewLink,
     this.gbpLocationId,
     required this.createdAt,
+    this.adminPreferences = const [],
   });
 
   static Company get sample => Company(

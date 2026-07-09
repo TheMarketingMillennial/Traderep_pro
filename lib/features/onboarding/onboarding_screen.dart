@@ -18,7 +18,7 @@ class OnboardingScreen extends StatefulWidget {
 class _OnboardingScreenState extends State<OnboardingScreen> {
   final PageController _pageController = PageController();
   int _currentPage = 0;
-  final int _totalPages = 6;
+  final int _totalPages = 7;
 
   // Form controllers
   final _companyNameCtrl = TextEditingController(text: '');
@@ -27,6 +27,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final _serviceAreaCtrl = TextEditingController(text: '');
   String? _selectedCategory;
   int _teamSize = 1;
+
+  // Admin preferences
+  final List<String> _selectedPreferences = [];
 
   void _nextPage() {
     if (_currentPage < _totalPages - 1) {
@@ -81,6 +84,23 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     onNext: _nextPage,
                   ),
                   _GoogleConnectPage(onNext: _nextPage),
+                  _AdminPreferencesPage(
+                    selected: _selectedPreferences,
+                    onToggle: (pref) {
+                      setState(() {
+                        if (_selectedPreferences.contains(pref)) {
+                          _selectedPreferences.remove(pref);
+                        } else {
+                          _selectedPreferences.add(pref);
+                        }
+                      });
+                    },
+                    onNext: () {
+                      // Fire-and-forget save — doesn't block navigation
+                      context.read<AppState>().saveAdminPreferences(_selectedPreferences);
+                      _nextPage();
+                    },
+                  ),
                   _ReadyPage(onNext: _nextPage),
                 ],
               ),
@@ -657,6 +677,119 @@ class _PermissionRow extends StatelessWidget {
 }
 
 // ─── Page 6: Ready ────────────────────────────────────────────────────────────
+// ─── Admin Preferences Page ───────────────────────────────────────────────────
+// Step 6: "What would you like TradeRep Pro to help you improve?"
+class _AdminPreferencesPage extends StatelessWidget {
+  final List<String> selected;
+  final ValueChanged<String> onToggle;
+  final VoidCallback onNext;
+
+  const _AdminPreferencesPage({
+    required this.selected,
+    required this.onToggle,
+    required this.onNext,
+  });
+
+  static const List<(String, IconData)> _options = [
+    ('More Google Reviews',       Icons.star_rounded),
+    ('Better Project Documentation', Icons.folder_open_rounded),
+    ('Better Photo Organization', Icons.photo_library_rounded),
+    ('Customer Communication',    Icons.chat_bubble_rounded),
+    ('Team Accountability',       Icons.groups_rounded),
+    ('Job Organization',          Icons.work_rounded),
+    ('Marketing',                 Icons.campaign_rounded),
+    ('Hiring',                    Icons.person_add_rounded),
+    ('Other',                     Icons.more_horiz_rounded),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 8),
+          const Text(
+            'What would you like\nTradeRep Pro to help\nyou improve?',
+            style: TextStyle(
+              color: TRColors.white,
+              fontSize: 26,
+              fontWeight: FontWeight.w900,
+              height: 1.2,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Select all that apply — we\'ll personalize your experience.',
+            style: TextStyle(color: TRColors.grayLight, fontSize: 14, height: 1.5),
+          ),
+          const SizedBox(height: 20),
+          Expanded(
+            child: SingleChildScrollView(
+              child: Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: _options.map((opt) {
+                  final label = opt.$1;
+                  final icon  = opt.$2;
+                  final isSelected = selected.contains(label);
+                  return GestureDetector(
+                    onTap: () => onToggle(label),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: isSelected ? TRColors.goldDim : TRColors.cardDark,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: isSelected
+                              ? TRColors.gold
+                              : TRColors.divider,
+                          width: isSelected ? 1.5 : 1,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            icon,
+                            size: 16,
+                            color: isSelected ? TRColors.gold : TRColors.grayMid,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            label,
+                            style: TextStyle(
+                              color: isSelected ? TRColors.gold : TRColors.grayLight,
+                              fontSize: 13,
+                              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                            ),
+                          ),
+                          if (isSelected) ...[
+                            const SizedBox(width: 6),
+                            const Icon(Icons.check_circle_rounded, color: TRColors.gold, size: 14),
+                          ],
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          GoldButton(
+            label: selected.isEmpty ? 'Skip for now' : 'Continue',
+            icon: Icons.arrow_forward_rounded,
+            onTap: onNext,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ReadyPage extends StatelessWidget {
   final VoidCallback onNext;
   const _ReadyPage({required this.onNext});
