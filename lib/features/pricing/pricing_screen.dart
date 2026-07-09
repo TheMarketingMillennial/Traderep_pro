@@ -1,7 +1,6 @@
 // pricing_screen.dart — TradeRep Pro
 // Single plan: $75/month, 3 seats included, $14.99/month per extra seat.
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_theme.dart';
@@ -30,8 +29,9 @@ class _PricingScreenState extends State<PricingScreen> {
         return;
       }
       final result = await StripeService.startTrialSubscription(
-        email: user.email,
-        name: user.name,
+        email:     user.email,
+        name:      user.name,
+        companyId: state.firestoreCompanyId,
       );
       if (!mounted) return;
       if (result.success) {
@@ -425,7 +425,9 @@ class _PricingScreenState extends State<PricingScreen> {
 // Shown when admin tries to invite beyond included seat count.
 class SeatUpgradeDialog extends StatefulWidget {
   final SeatPurchaseRequest request;
-  final VoidCallback onConfirm;
+  /// Called when the user confirms. Must perform the async Stripe seat-add
+  /// operation and return. Throw to signal failure — the dialog shows the error.
+  final Future<void> Function() onConfirm;
   const SeatUpgradeDialog({super.key, required this.request, required this.onConfirm});
 
   @override
@@ -434,6 +436,22 @@ class SeatUpgradeDialog extends StatefulWidget {
 
 class _SeatUpgradeDialogState extends State<SeatUpgradeDialog> {
   bool _loading = false;
+  String? _error;
+
+  Future<void> _handleConfirm() async {
+    setState(() { _loading = true; _error = null; });
+    try {
+      await widget.onConfirm();
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = e.toString().replaceFirst('Exception: ', '');
+        });
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -469,10 +487,27 @@ class _SeatUpgradeDialogState extends State<SeatUpgradeDialog> {
               'New total: \$${TRPlan.totalMonthly(widget.request.extraSeatsNeeded).toStringAsFixed(2)}/month',
               style: const TextStyle(color: TRColors.gold, fontSize: 15, fontWeight: FontWeight.w700),
             ),
+            // Error message (shown if the Stripe call fails)
+            if (_error != null) ...[  
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: TRColors.error.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: TRColors.error.withValues(alpha: 0.3)),
+                ),
+                child: Text(
+                  _error!,
+                  style: const TextStyle(color: TRColors.error, fontSize: 12, height: 1.4),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ],
             const SizedBox(height: 24),
             Row(children: [
               Expanded(child: OutlinedButton(
-                onPressed: () => Navigator.pop(context),
+                onPressed: _loading ? null : () => Navigator.pop(context, false),
                 style: OutlinedButton.styleFrom(
                   side: const BorderSide(color: TRColors.divider),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -482,11 +517,7 @@ class _SeatUpgradeDialogState extends State<SeatUpgradeDialog> {
               )),
               const SizedBox(width: 12),
               Expanded(child: ElevatedButton(
-                onPressed: _loading ? null : () async {
-                  setState(() => _loading = true);
-                  widget.onConfirm();
-                  if (mounted) Navigator.pop(context);
-                },
+                onPressed: _loading ? null : _handleConfirm,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: TRColors.gold,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),

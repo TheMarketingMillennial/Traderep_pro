@@ -39,7 +39,22 @@ class TRPlan {
   static const double monthlyPrice   = 75.00;       // base price
   static const int    includedSeats  = 3;            // seats in base price
   static const double extraSeatPrice = 14.99;        // per additional seat/month
-  static const String stripePriceId  = 'price_1TcTIkCnWFtpnJDSLagxlQCu'; // update with real ID
+
+  /// Stripe Price ID for the base plan (Starter product — $75/mo, maps to STRIPE_PRICE_STARTER).
+  static const String basePriceId = String.fromEnvironment(
+    'STRIPE_BASE_PRICE_ID',
+    defaultValue: 'price_1TcTIkCnWFtpnJDSLagxlQCu',
+  );
+
+  /// Stripe Price ID for per-seat add-on (Growth product — $14.99/mo, maps to STRIPE_PRICE_GROWTH).
+  static const String seatPriceId = String.fromEnvironment(
+    'STRIPE_SEAT_PRICE_ID',
+    defaultValue: 'price_1TcTJXCnWFtpnJDSXlZpYOs9',
+  );
+
+  // Legacy alias kept for any remaining references — points to base price.
+  @Deprecated('Use TRPlan.basePriceId instead')
+  static const String stripePriceId = basePriceId;
 
   static const List<String> features = [
     'Up to 3 team members included',

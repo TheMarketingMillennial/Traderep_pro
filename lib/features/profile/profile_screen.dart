@@ -8,6 +8,8 @@ import '../../shared/widgets/tr_widgets.dart';
 import '../../shared/models/models.dart';
 import '../pricing/trial_widgets.dart';
 import '../pricing/pricing_screen.dart';
+import '../pricing/pricing_models.dart';
+import '../../shared/services/stripe_service.dart';
 import '../photos/photo_library_screen.dart';
 import 'help_support_screen.dart';
 import 'privacy_policy_screen.dart';
@@ -660,8 +662,63 @@ class _InviteTeamSheetState extends State<_InviteTeamSheet> {
       return;
     }
 
-    setState(() { _loading = true; _error = null; });
     final appState = context.read<AppState>();
+
+    // ── Seat-gate check ──────────────────────────────────────────────────────
+    // Count seats already in use: active members + pending invites.
+    final usedSeats      = appState.team.length + appState.pendingInvites.length;
+    final availableSeats = appState.subscription.purchasedSeats;
+
+    if (usedSeats >= availableSeats) {
+      // All included seats are taken — prompt to add a paid seat.
+      final request = SeatPurchaseRequest(
+        currentSeats:           availableSeats,
+        requestedSeats:         availableSeats + 1,
+        additionalMonthlyCost:  TRPlan.extraSeatPrice,
+      );
+
+      final subscriptionId = appState.subscription.stripeSubscriptionId;
+      final companyId      = appState.firestoreCompanyId;
+
+      if (!mounted) return;
+
+      // Show dialog and wait for result (true = confirmed, false/null = cancelled).
+      final confirmed = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => SeatUpgradeDialog(
+          request: request,
+          onConfirm: () async {
+            // Guard: subscription must exist before we can modify it.
+            if (subscriptionId == null || subscriptionId.isEmpty) {
+              throw Exception(
+                'No active subscription found. Please subscribe before adding seats.',
+              );
+            }
+
+            // Call Railway /add-seat — modifies the existing subscription in-place.
+            final result = await StripeService.addSeatToSubscription(
+              subscriptionId: subscriptionId,
+              companyId:      companyId,
+            );
+
+            if (!result.success) {
+              throw Exception(result.error ?? 'Could not add seat. Please try again.');
+            }
+
+            // Update local app state so the UI reflects the new seat count.
+            appState.addSeats(1);
+          },
+        ),
+      );
+
+      // If the user cancelled or the Stripe call failed, block the invite.
+      if (confirmed != true) return;
+      if (!mounted) return;
+    }
+    // ── End seat-gate ────────────────────────────────────────────────────────
+
+    setState(() { _loading = true; _error = null; });
     final id = await appState.sendTeamInvite(phone: phone, name: name, role: _role);
     if (!mounted) return;
 
