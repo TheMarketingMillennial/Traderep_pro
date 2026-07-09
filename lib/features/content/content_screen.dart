@@ -34,7 +34,7 @@ class _ContentScreenState extends State<ContentScreen> with SingleTickerProvider
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     // Single plan — content approval always accessible
-    const hasContentAccess = true;
+
 
     return Scaffold(
       backgroundColor: TRColors.navyDeep,
@@ -45,16 +45,14 @@ class _ContentScreenState extends State<ContentScreen> with SingleTickerProvider
 
             _buildTabs(),
             Expanded(
-              child: hasContentAccess
-                ? TabBarView(
-                    controller: _tabController,
-                    children: [
-                      _buildPendingTab(context, state),
-                      _buildApprovedTab(context, state),
-                      _buildPublishedTab(context, state),
-                    ],
-                  )
-                : const Center(child: SizedBox.shrink()),
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  _buildPendingTab(context, state),
+                  _buildApprovedTab(context, state),
+                  _buildPublishedTab(context, state),
+                ],
+              ),
             ),
           ],
         ),
@@ -200,6 +198,7 @@ class _ContentCard extends StatefulWidget {
 }
 
 class _ContentCardState extends State<_ContentCard> {
+  // ignore: prefer_final_fields — may add expand toggle in future
   bool _expanded = false;
   bool _regenerating = false;
   late TextEditingController _captionCtrl;
@@ -218,6 +217,7 @@ class _ContentCardState extends State<_ContentCard> {
 
   Future<void> _handleRegenerate(BuildContext context, AppState state) async {
     setState(() => _regenerating = true);
+    final messenger = ScaffoldMessenger.of(context); // capture before async gap
     final company = state.company;
     final posts   = await state.getRecentGbpPosts();
     final summaries = posts.map((p) => {
@@ -247,8 +247,7 @@ class _ContentCardState extends State<_ContentCard> {
         sourceSubmissionId: widget.post.sourceSubmissionId, companyId: widget.post.companyId,
       ));
     } else {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      messenger.showSnackBar(const SnackBar(
         content: Text('AI unavailable. Check Railway server.'),
         backgroundColor: TRColors.warning,
       ));
@@ -520,146 +519,4 @@ class _ContentCardState extends State<_ContentCard> {
   }
 }
 
-// Feature highlight card used in content screen
-class _ContentLockedView extends StatelessWidget {
-  // ignore: unused_element
-  const _ContentLockedView();
 
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
-      child: Column(
-        children: [
-          // Preview card (dimmed)
-          Opacity(
-            opacity: 0.3,
-            child: Container(
-              decoration: BoxDecoration(
-                color: TRColors.cardDark,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: TRColors.warning.withValues(alpha: 0.4)),
-              ),
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
-                    child: Row(children: [
-                      const Icon(Icons.auto_awesome_rounded, color: TRColors.gold, size: 16),
-                      const SizedBox(width: 6),
-                      const Expanded(child: Text('AI-Generated Post', style: TextStyle(
-                        color: TRColors.gold, fontSize: 12, fontWeight: FontWeight.w600,
-                      ))),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: TRColors.warning.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(5),
-                        ),
-                        child: const Text('PENDING REVIEW', style: TextStyle(
-                          color: TRColors.warning, fontSize: 9, fontWeight: FontWeight.w800,
-                        )),
-                      ),
-                    ]),
-                  ),
-                  Container(
-                    height: 120,
-                    color: TRColors.cardMid,
-                    child: const Center(child: Icon(Icons.photo_rounded, color: TRColors.grayMid, size: 48)),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(height: 10, decoration: BoxDecoration(
-                          color: TRColors.grayMid, borderRadius: BorderRadius.circular(4),
-                        )),
-                        const SizedBox(height: 6),
-                        Container(height: 10, width: 200, decoration: BoxDecoration(
-                          color: TRColors.grayMid, borderRadius: BorderRadius.circular(4),
-                        )),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 20),
-          // Feature highlights
-          _ContentFeatureCard(
-            icon: Icons.auto_awesome_rounded,
-            title: 'AI Post Generation',
-            desc: 'Every completed job automatically becomes a Google-ready before/after post.',
-          ),
-          const SizedBox(height: 10),
-          _ContentFeatureCard(
-            icon: Icons.edit_note_rounded,
-            title: 'Caption Editing',
-            desc: 'Review, edit, and approve AI captions before they go live on your Google profile.',
-          ),
-          const SizedBox(height: 10),
-          _ContentFeatureCard(
-            icon: Icons.schedule_rounded,
-            title: 'Scheduling',
-            desc: 'Schedule posts for optimal times. Stay active on Google without extra work.',
-          ),
-          const SizedBox(height: 10),
-          _ContentFeatureCard(
-            icon: Icons.share_rounded,
-            title: 'Social-Ready Images',
-            desc: 'Export branded before/after cards for Instagram, Facebook, and more.',
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ContentFeatureCard extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String desc;
-  const _ContentFeatureCard({required this.icon, required this.title, required this.desc});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: TRColors.cardDark,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: TRColors.divider),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: TRColors.goldDim,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(icon, color: TRColors.gold, size: 18),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: const TextStyle(
-                  color: TRColors.white, fontSize: 13, fontWeight: FontWeight.w700,
-                )),
-                const SizedBox(height: 3),
-                Text(desc, style: const TextStyle(
-                  color: TRColors.grayLight, fontSize: 12, height: 1.4,
-                )),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}

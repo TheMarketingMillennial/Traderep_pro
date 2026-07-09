@@ -145,8 +145,8 @@ class Company {
   final DateTime createdAt;
 
   /// Admin-selected improvement goals from onboarding.
-  /// Examples: ['More Google Reviews', 'Better Photo Organization', 'Team Accountability']
-  /// Stored in Firestore as 'admin_preferences' (List<String>).
+  /// Examples: "More Google Reviews", "Better Photo Organization", "Team Accountability".
+  /// Stored in Firestore as 'admin_preferences' (List of String).
   final List<String> adminPreferences;
 
   /// Admin-selected brand voice / writing style for AI-generated GBP posts.
