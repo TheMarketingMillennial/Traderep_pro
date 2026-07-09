@@ -93,6 +93,93 @@ class FirestoreService {
     });
   }
 
+  /// Saves the admin-selected brand voice for AI-generated GBP posts.
+  /// [voice] is one of the 9 brand voice keys (e.g. 'professional', 'friendly').
+  Future<void> updateBrandVoice(String voice) async {
+    try {
+      await _db.collection('companies').doc(_companyId).set({
+        'brand_voice': voice,
+        'updated_at': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (e) {
+      if (kDebugMode) debugPrint('FirestoreService updateBrandVoice error: $e');
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // GBP POST HISTORY — Anti-Repetition System
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /// Saves a published GBP post to the anti-repetition history collection.
+  /// Called whenever a post is marked published — used to prevent the AI
+  /// from repeating openings, closings, hashtags, and phrases.
+  Future<void> savePublishedGbpPost({
+    required String postId,
+    required String caption,
+    required List<String> hashtags,
+    required String jobType,
+  }) async {
+    try {
+      await _db
+          .collection('gbp_post_history')
+          .doc(_companyId)
+          .collection('published')
+          .doc(postId)
+          .set({
+        'caption':      caption,
+        'hashtags':     hashtags,
+        'job_type':     jobType,
+        'company_id':   _companyId,
+        'published_at': FieldValue.serverTimestamp(),
+        // Extract first and last sentences for anti-repetition detection.
+        // AI uses these to avoid repeating openings and closings.
+        'opening_line': _extractOpeningLine(caption),
+        'closing_line': _extractClosingLine(caption),
+      });
+    } catch (e) {
+      if (kDebugMode) debugPrint('FirestoreService savePublishedGbpPost error: $e');
+    }
+  }
+
+  /// Retrieves the most recent [limit] published GBP posts for this company.
+  /// Used by AiService to pass previous content to the AI for anti-repetition.
+  Future<List<Map<String, dynamic>>> getRecentGbpPosts({int limit = 60}) async {
+    try {
+      final snap = await _db
+          .collection('gbp_post_history')
+          .doc(_companyId)
+          .collection('published')
+          .orderBy('published_at', descending: true)
+          .limit(limit)
+          .get();
+
+      return snap.docs.map((d) => d.data()).toList();
+    } catch (e) {
+      if (kDebugMode) debugPrint('FirestoreService getRecentGbpPosts error: $e');
+      return [];
+    }
+  }
+
+  String _extractOpeningLine(String caption) {
+    if (caption.isEmpty) return '';
+    final firstPeriod = caption.indexOf('.');
+    final firstNewline = caption.indexOf('\n');
+    int end = caption.length;
+    if (firstPeriod > 0 && firstPeriod < end) end = firstPeriod + 1;
+    if (firstNewline > 0 && firstNewline < end) end = firstNewline;
+    return caption.substring(0, end).trim();
+  }
+
+  String _extractClosingLine(String caption) {
+    if (caption.isEmpty) return '';
+    final parts = caption
+        .split(RegExp(r'[.\n]'))
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    return parts.isNotEmpty ? parts.last : '';
+  }
+
   // ══════════════════════════════════════════════════════════════════════════
   // USERS / TEAM
   // ══════════════════════════════════════════════════════════════════════════
@@ -451,6 +538,7 @@ class FirestoreService {
     required String submittedByName,
     required List<SubmittedPhoto> photos,
     String? crewNote,
+    String? customerHighlight,
     // The original XFile list must be passed alongside photos so we can read
     // bytes on all platforms (XFile.readAsBytes() works on web + mobile).
     List<XFile>? xFiles,
@@ -508,6 +596,7 @@ class FirestoreService {
       submittedByName: submittedByName,
       photos: uploadedPhotos,
       crewNote: crewNote,
+      customerHighlight: customerHighlight,
       status: PhotoSubmissionStatus.pending,
       submittedAt: DateTime.now(),
     );
@@ -570,6 +659,7 @@ class FirestoreService {
       teamSize: teamSizeInt,
       createdAt: (d['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
       adminPreferences: adminPreferences,
+      brandVoice: d['brand_voice'] as String?,
     );
   }
 

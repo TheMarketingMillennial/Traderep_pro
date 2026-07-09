@@ -79,6 +79,12 @@ class _CreatePostSheetState extends State<CreatePostSheet> {
   bool _saving        = false;
   bool _generatingAi  = false;
 
+  // Tracks which tone/voice chip is currently active
+  CaptionTone? _activeTone;
+
+  // Cached post history for anti-repetition (fetched once on open)
+  List<Map<String, dynamic>> _previousPosts = [];
+
   @override
   void initState() {
     super.initState();
@@ -97,35 +103,33 @@ class _CreatePostSheetState extends State<CreatePostSheet> {
     if (photos.isNotEmpty) {
       _beforeIdx ??= 0;
       _afterIdx ??= photos.length - 1;
-      // If both resolved to same index (e.g. single photo), keep it — it will
-      // be used for both slots, which is fine for a progress-only submission.
     }
 
-    // Build auto-caption from company + job context
-    final state = context.read<AppState>();
-    final company = state.company;
-    final tradeName = company?.tradeCategory ?? 'Trade';
-    final area = company?.serviceArea ?? '';
-    final bizName = company?.name ?? '';
-    final jobName = widget.submission.jobName;
+    // Placeholder caption while AI generates
+    _captionCtrl = TextEditingController(text: '');
+    _hashtagCtrl = TextEditingController(text: '');
 
-    _captionCtrl = TextEditingController(
-      text: '🛠️ $jobName complete${area.isNotEmpty ? " in $area" : ""}!\n\n'
-          'Our crew delivered a clean, professional result for another happy '
-          'customer. Every job gets our full attention — start to finish. 👍\n\n'
-          '${bizName.isNotEmpty ? "✨ $bizName — " : ""}'
-          'Trusted $tradeName Experts'
-          '${area.isNotEmpty ? " serving $area" : ""}.\n\n'
-          'Call or message us for a free estimate!',
-    );
-    _hashtagCtrl = TextEditingController(
-      text: '#${'#$tradeName'.replaceAll('# ', '#').replaceAll(' ', '')} '
-          '#BeforeAndAfter '
-          '#${'$tradeName Contractor'.replaceAll(' ', '')} '
-          '#HomeImprovement '
-          '#QualityWork '
-          '#ContractorLife',
-    );
+    // Auto-trigger AI generation on open using company brand voice.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _autoGenerateOnOpen());
+  }
+
+  /// Fetches post history then triggers AI generation using the company's brand voice.
+  Future<void> _autoGenerateOnOpen() async {
+    if (!mounted) return;
+    final state = context.read<AppState>();
+
+    // Fetch recent posts for anti-repetition in background
+    try {
+      final posts = await state.getRecentGbpPosts();
+      if (mounted) _previousPosts = posts;
+    } catch (_) {}
+
+    // Determine initial tone from company brand voice, default professional
+    final brandVoice = state.company?.brandVoice;
+    final initialTone = CaptionTone.fromBrandVoice(brandVoice);
+    if (mounted) setState(() => _activeTone = initialTone);
+
+    await _regenerateWithAi(initialTone);
   }
 
   @override
@@ -135,53 +139,80 @@ class _CreatePostSheetState extends State<CreatePostSheet> {
     super.dispose();
   }
 
-  /// Builds tone chip buttons: Professional | Friendly | Bold
-  List<Widget> _buildToneChips() {
-    return CaptionTone.values.map((tone) {
-      return Padding(
-        padding: const EdgeInsets.only(left: 6),
-        child: GestureDetector(
-          onTap: () => _regenerateWithAi(tone),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: TRColors.gold.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: TRColors.gold.withValues(alpha: 0.4)),
+  /// Builds scrollable brand voice chip row showing all 9 options.
+  Widget _buildVoiceChipRow() {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: CaptionTone.values.map((tone) {
+          final isActive = _activeTone == tone;
+          return Padding(
+            padding: const EdgeInsets.only(right: 6),
+            child: GestureDetector(
+              onTap: _generatingAi ? null : () {
+                setState(() => _activeTone = tone);
+                _regenerateWithAi(tone);
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: isActive
+                      ? TRColors.gold.withValues(alpha: 0.2)
+                      : TRColors.cardDark,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: isActive ? TRColors.gold : TRColors.divider,
+                    width: isActive ? 1.5 : 1,
+                  ),
+                ),
+                child: Text(tone.label,
+                  style: TextStyle(
+                    color: isActive ? TRColors.gold : TRColors.grayMid,
+                    fontSize: 12, fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+                  )),
+              ),
             ),
-            child: Text(tone.label,
-              style: const TextStyle(
-                color: TRColors.gold, fontSize: 11, fontWeight: FontWeight.w600,
-              )),
-          ),
-        ),
-      );
-    }).toList();
+          );
+        }).toList(),
+      ),
+    );
   }
 
   /// Calls Railway /generate-caption and updates caption + hashtag fields.
   Future<void> _regenerateWithAi(CaptionTone tone) async {
     if (_generatingAi) return;
-    setState(() => _generatingAi = true);
+    setState(() { _generatingAi = true; _activeTone = tone; });
 
     final state   = context.read<AppState>();
     final company = state.company;
 
+    // Build previous post summaries for anti-repetition
+    final summaries = _previousPosts.map((p) => {
+      'opening': p['opening_line'] ?? '',
+      'closing': p['closing_line'] ?? '',
+      'hashtags': (p['hashtags'] as List<dynamic>?)?.join(' ') ?? '',
+    }).toList();
+
     final result = await AiService.generateCaption(
-      jobType:        widget.submission.jobName,
-      companyName:    company?.name ?? '',
-      trade:          company?.tradeCategory ?? '',
-      serviceArea:    company?.serviceArea ?? '',
-      jobDescription: widget.submission.crewNote ?? '',
-      tone:           tone,
+      jobType:               widget.submission.jobName,
+      companyName:           company?.name ?? '',
+      trade:                 company?.tradeCategory ?? '',
+      serviceArea:           company?.serviceArea ?? '',
+      jobDescription:        widget.submission.crewNote ?? '',
+      tone:                  tone,
+      brandVoice:            company?.brandVoice,
+      customerHighlight:     widget.submission.customerHighlight,
+      season:                AiService.currentSeason,
+      previousPostSummaries: summaries,
     );
 
     if (!mounted) return;
     setState(() => _generatingAi = false);
 
     if (result != null) {
-      _captionCtrl.text  = result.caption;
-      _hashtagCtrl.text  = result.hashtags.join(' ');
+      _captionCtrl.text = result.caption;
+      _hashtagCtrl.text = result.hashtags.join(' ');
     } else {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('AI unavailable — check Railway server has OPENAI_API_KEY set'),
@@ -402,21 +433,64 @@ class _CreatePostSheetState extends State<CreatePostSheet> {
                       ),
                       const SizedBox(height: 20),
                     ],
-                    // ── AI Regenerate row ───────────────────────────────────
+                    // ── AI Brand Voice selector row ─────────────────────────
                     Row(children: [
                       const Icon(Icons.auto_awesome_rounded, color: TRColors.gold, size: 14),
                       const SizedBox(width: 6),
-                      const Text('Regenerate with AI',
+                      const Text('Brand Voice',
                         style: TextStyle(color: TRColors.gold, fontSize: 12, fontWeight: FontWeight.w700)),
                       const Spacer(),
                       if (_generatingAi)
                         const SizedBox(
                           width: 16, height: 16,
                           child: CircularProgressIndicator(strokeWidth: 2, color: TRColors.gold),
-                        )
-                      else ..._buildToneChips(),
+                        ),
                     ]),
+                    const SizedBox(height: 8),
+                    _buildVoiceChipRow(),
                     const SizedBox(height: 12),
+                    // ── Regenerate button ────────────────────────────────────
+                    GestureDetector(
+                      onTap: _generatingAi
+                          ? null
+                          : () => _regenerateWithAi(_activeTone ?? CaptionTone.professional),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        decoration: BoxDecoration(
+                          color: _generatingAi
+                              ? TRColors.cardDark
+                              : TRColors.gold.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: _generatingAi
+                                ? TRColors.divider
+                                : TRColors.gold.withValues(alpha: 0.5),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            if (_generatingAi)
+                              const SizedBox(
+                                width: 14, height: 14,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: TRColors.gold),
+                              )
+                            else
+                              const Icon(Icons.refresh_rounded, color: TRColors.gold, size: 16),
+                            const SizedBox(width: 8),
+                            Text(
+                              _generatingAi ? 'Generating…' : 'Regenerate Caption',
+                              style: TextStyle(
+                                color: _generatingAi ? TRColors.grayMid : TRColors.gold,
+                                fontSize: 13, fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
                     // ── Caption editor ──────────────────────────────────────
                     _SectionLabel(
                         label: 'Caption (AI-generated — edit freely)',

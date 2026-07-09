@@ -149,6 +149,12 @@ class Company {
   /// Stored in Firestore as 'admin_preferences' (List<String>).
   final List<String> adminPreferences;
 
+  /// Admin-selected brand voice / writing style for AI-generated GBP posts.
+  /// Examples: 'professional', 'friendly', 'family_owned', 'luxury',
+  /// 'educational', 'straightforward', 'premium', 'bold', 'local_community'.
+  /// Stored in Firestore as 'brand_voice' (String).
+  final String? brandVoice;
+
   const Company({
     required this.id,
     required this.name,
@@ -164,6 +170,7 @@ class Company {
     this.gbpLocationId,
     required this.createdAt,
     this.adminPreferences = const [],
+    this.brandVoice,
   });
 
   static Company get sample => Company(
@@ -406,6 +413,10 @@ class PhotoSubmission {
   final String submittedByName;
   final List<SubmittedPhoto> photos;
   final String? crewNote;
+  /// Optional one-sentence customer highlight from the crew.
+  /// Used by AI caption generation to add authentic customer feedback context.
+  /// e.g. "Customer loved the finished result." or "Left the property spotless."
+  final String? customerHighlight;
   final PhotoSubmissionStatus status;
   final String? reviewerNote;  // rejection reason or approval comment
   final String? reviewedById;
@@ -422,6 +433,7 @@ class PhotoSubmission {
     required this.submittedByName,
     required this.photos,
     this.crewNote,
+    this.customerHighlight,
     this.status = PhotoSubmissionStatus.pending,
     this.reviewerNote,
     this.reviewedById,
@@ -440,7 +452,7 @@ class PhotoSubmission {
     return PhotoSubmission(
       id: id, jobId: jobId, jobName: jobName, companyId: companyId,
       submittedById: submittedById, submittedByName: submittedByName,
-      photos: photos, crewNote: crewNote,
+      photos: photos, crewNote: crewNote, customerHighlight: customerHighlight,
       status: status ?? this.status,
       reviewerNote: reviewerNote ?? this.reviewerNote,
       reviewedById: reviewedById ?? this.reviewedById,
@@ -458,6 +470,7 @@ class PhotoSubmission {
     'submitted_by_name':   submittedByName,
     'photos':              photos.map((p) => p.toMap()).toList(),
     'crew_note':           crewNote,
+    'customer_highlight':  customerHighlight,
     'status':              status.name,
     'reviewer_note':       reviewerNote,
     'reviewed_by_id':      reviewedById,
@@ -469,20 +482,21 @@ class PhotoSubmission {
   static PhotoSubmission fromFirestore(Map<String, dynamic> d, String id) {
     final rawPhotos = (d['photos'] as List<dynamic>?) ?? [];
     return PhotoSubmission(
-      id:               id,
-      jobId:            (d['job_id']            as String?) ?? '',
-      jobName:          (d['job_name']           as String?) ?? 'Job',
-      companyId:        (d['company_id']         as String?) ?? '',
-      submittedById:    (d['submitted_by_id']    as String?) ?? '',
-      submittedByName:  (d['submitted_by_name']  as String?) ?? 'Crew Member',
-      photos:           rawPhotos.map((p) => SubmittedPhoto.fromMap(p as Map<String, dynamic>)).toList(),
-      crewNote:         d['crew_note']           as String?,
-      status:           _parseStatus(d['status'] as String?),
-      reviewerNote:     d['reviewer_note']       as String?,
-      reviewedById:     d['reviewed_by_id']      as String?,
-      reviewedByName:   d['reviewed_by_name']    as String?,
-      submittedAt:      _parseDate(d['submitted_at']),
-      reviewedAt:       d['reviewed_at'] != null ? _parseDate(d['reviewed_at']) : null,
+      id:                id,
+      jobId:             (d['job_id']            as String?) ?? '',
+      jobName:           (d['job_name']           as String?) ?? 'Job',
+      companyId:         (d['company_id']         as String?) ?? '',
+      submittedById:     (d['submitted_by_id']    as String?) ?? '',
+      submittedByName:   (d['submitted_by_name']  as String?) ?? 'Crew Member',
+      photos:            rawPhotos.map((p) => SubmittedPhoto.fromMap(p as Map<String, dynamic>)).toList(),
+      crewNote:          d['crew_note']           as String?,
+      customerHighlight: d['customer_highlight']  as String?,
+      status:            _parseStatus(d['status'] as String?),
+      reviewerNote:      d['reviewer_note']       as String?,
+      reviewedById:      d['reviewed_by_id']      as String?,
+      reviewedByName:    d['reviewed_by_name']    as String?,
+      submittedAt:       _parseDate(d['submitted_at']),
+      reviewedAt:        d['reviewed_at'] != null ? _parseDate(d['reviewed_at']) : null,
     );
   }
 

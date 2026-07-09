@@ -152,6 +152,9 @@ class AppState extends ChangeNotifier {
       _posts.where((p) => p.status == ContentStatus.pending).toList();
 
   void updatePostStatus(String postId, ContentStatus status) {
+    // Find the post before updating so we can access its content for history.
+    final targetPost = _posts.where((p) => p.id == postId).firstOrNull;
+
     _posts = _posts.map((p) {
       if (p.id == postId) {
         return ContentPost(
@@ -175,6 +178,16 @@ class AppState extends ChangeNotifier {
     _fs.updatePostStatus(postId, status).catchError((e) {
       if (kDebugMode) debugPrint('updatePostStatus Firestore error: $e');
     });
+
+    // Save to anti-repetition history whenever a post is published.
+    if (status == ContentStatus.published && targetPost != null) {
+      _fs.savePublishedGbpPost(
+        postId:   postId,
+        caption:  targetPost.suggestedCaption,
+        hashtags: targetPost.suggestedHashtags,
+        jobType:  targetPost.projectSummary,
+      );
+    }
   }
 
   /// Bridges photo-submission pipeline → content-post pipeline.
@@ -532,6 +545,7 @@ class AppState extends ChangeNotifier {
     required List<XFile> pickedFiles,
     required PhotoType photoType,
     String? crewNote,
+    String? customerHighlight,
   }) async {
     final user = _currentUser;
     if (user == null) return;
@@ -550,6 +564,7 @@ class AppState extends ChangeNotifier {
         submittedByName: user.name,
         photos: photos,
         crewNote: crewNote,
+        customerHighlight: customerHighlight,
         // Pass original XFile list so FirestoreService can read bytes on
         // both mobile (file path) and web (blob/data URL via readAsBytes())
         xFiles: pickedFiles,
@@ -749,10 +764,37 @@ class AppState extends ChangeNotifier {
         googleReviewLink:  _company!.googleReviewLink,
         gbpLocationId:     locationId,
         createdAt:         _company!.createdAt,
+        adminPreferences:  _company!.adminPreferences,
+        brandVoice:        _company!.brandVoice,
       );
       notifyListeners();
     }
     await _fs.updateGbpLocationId(locationId);
+  }
+
+  /// Updates the company brand voice for AI-generated GBP posts.
+  Future<void> updateBrandVoice(String voice) async {
+    if (_company != null) {
+      _company = Company(
+        id:                _company!.id,
+        name:              _company!.name,
+        logoUrl:           _company!.logoUrl,
+        tradeCategory:     _company!.tradeCategory,
+        serviceArea:       _company!.serviceArea,
+        phone:             _company!.phone,
+        website:           _company!.website,
+        teamSize:          _company!.teamSize,
+        googleConnected:   _company!.googleConnected,
+        googleBusinessId:  _company!.googleBusinessId,
+        googleReviewLink:  _company!.googleReviewLink,
+        gbpLocationId:     _company!.gbpLocationId,
+        createdAt:         _company!.createdAt,
+        adminPreferences:  _company!.adminPreferences,
+        brandVoice:        voice,
+      );
+      notifyListeners();
+    }
+    await _fs.updateBrandVoice(voice);
   }
 
   /// Publishes a ContentPost to Google Business Profile via the Railway server.
@@ -761,6 +803,11 @@ class AppState extends ChangeNotifier {
   /// as [ContentStatus.published] in Firestore.
   ///
   /// Returns a [GbpResult] — caller decides how to surface success/failure UI.
+  /// Retrieves recent published GBP posts for anti-repetition context.
+  Future<List<Map<String, dynamic>>> getRecentGbpPosts({int limit = 60}) {
+    return _fs.getRecentGbpPosts(limit: limit);
+  }
+
   Future<GbpResult> publishToGbp(ContentPost post) async {
     final locationId = _company?.gbpLocationId;
     if (locationId == null || locationId.isEmpty) {
@@ -799,6 +846,14 @@ class AppState extends ChangeNotifier {
     if (result.success) {
       // Mark as published in Firestore + local state
       updatePostStatus(post.id, ContentStatus.published);
+      // Save to anti-repetition history so future AI generations avoid
+      // repeating openings, closings, hashtags and phrases.
+      _fs.savePublishedGbpPost(
+        postId:   post.id,
+        caption:  post.suggestedCaption,
+        hashtags: post.suggestedHashtags,
+        jobType:  post.projectSummary,
+      );
     }
 
     return result;

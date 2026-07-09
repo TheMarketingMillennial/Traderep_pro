@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_theme.dart';
 import '../../shared/services/app_state.dart';
+import '../../shared/services/ai_service.dart';
 import '../../shared/widgets/tr_widgets.dart';
 import '../../shared/models/models.dart';
 
@@ -200,6 +201,7 @@ class _ContentCard extends StatefulWidget {
 
 class _ContentCardState extends State<_ContentCard> {
   bool _expanded = false;
+  bool _regenerating = false;
   late TextEditingController _captionCtrl;
 
   @override
@@ -212,6 +214,45 @@ class _ContentCardState extends State<_ContentCard> {
   void dispose() {
     _captionCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _handleRegenerate(BuildContext context, AppState state) async {
+    setState(() => _regenerating = true);
+    final company = state.company;
+    final posts   = await state.getRecentGbpPosts();
+    final summaries = posts.map((p) => {
+      'opening':  p['opening_line'] ?? '',
+      'closing':  p['closing_line'] ?? '',
+      'hashtags': (p['hashtags'] as List<dynamic>?)?.join(' ') ?? '',
+    }).toList();
+    final result = await AiService.generateCaption(
+      jobType:               widget.post.projectSummary,
+      companyName:           company?.name ?? '',
+      trade:                 company?.tradeCategory ?? '',
+      serviceArea:           company?.serviceArea ?? '',
+      brandVoice:            company?.brandVoice,
+      season:                AiService.currentSeason,
+      previousPostSummaries: summaries,
+    );
+    if (!mounted) return;
+    setState(() => _regenerating = false);
+    if (result != null) {
+      _captionCtrl.text = result.caption;
+      state.replacePost(ContentPost(
+        id: widget.post.id, jobId: widget.post.jobId,
+        beforePhotoUrl: widget.post.beforePhotoUrl, afterPhotoUrl: widget.post.afterPhotoUrl,
+        suggestedCaption: result.caption, suggestedHashtags: result.hashtags,
+        projectSummary: widget.post.projectSummary, status: widget.post.status,
+        scheduledFor: widget.post.scheduledFor, createdAt: widget.post.createdAt,
+        sourceSubmissionId: widget.post.sourceSubmissionId, companyId: widget.post.companyId,
+      ));
+    } else {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('AI unavailable. Check Railway server.'),
+        backgroundColor: TRColors.warning,
+      ));
+    }
   }
 
   @override
@@ -339,7 +380,34 @@ class _ContentCardState extends State<_ContentCard> {
                 ),
 
                 if (widget.isEditable) ...[
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 10),
+                  // Regenerate button
+                  GestureDetector(
+                    onTap: _regenerating ? null : () => _handleRegenerate(context, state),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 9),
+                      decoration: BoxDecoration(
+                        color: TRColors.gold.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: TRColors.gold.withValues(alpha: 0.4)),
+                      ),
+                      child: Center(child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (_regenerating)
+                            const SizedBox(width: 14, height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: TRColors.gold))
+                          else
+                            const Icon(Icons.refresh_rounded, color: TRColors.gold, size: 15),
+                          const SizedBox(width: 6),
+                          Text(_regenerating ? 'Regenerating…' : 'Regenerate Caption',
+                            style: const TextStyle(color: TRColors.gold, fontSize: 12, fontWeight: FontWeight.w600)),
+                        ],
+                      )),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
                   Row(children: [
                     Expanded(child: GestureDetector(
                       onTap: () {

@@ -35,7 +35,9 @@ class SubmitPhotosSheet extends StatefulWidget {
 }
 
 class _SubmitPhotosSheetState extends State<SubmitPhotosSheet> {
-  final _noteController = TextEditingController();
+  final _workTypeCtrl         = TextEditingController();
+  final _crewNoteCtrl         = TextEditingController();
+  final _customerHighlightCtrl = TextEditingController();
   final _picker = ImagePicker();
 
   Job? _selectedJob;
@@ -51,7 +53,9 @@ class _SubmitPhotosSheetState extends State<SubmitPhotosSheet> {
 
   @override
   void dispose() {
-    _noteController.dispose();
+    _workTypeCtrl.dispose();
+    _crewNoteCtrl.dispose();
+    _customerHighlightCtrl.dispose();
     super.dispose();
   }
 
@@ -104,6 +108,12 @@ class _SubmitPhotosSheetState extends State<SubmitPhotosSheet> {
       );
       return;
     }
+    if (_workTypeCtrl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please describe what work was completed.'), backgroundColor: TRColors.warning),
+      );
+      return;
+    }
     if (_pickedFiles.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please add at least one photo.'), backgroundColor: TRColors.warning),
@@ -113,13 +123,23 @@ class _SubmitPhotosSheetState extends State<SubmitPhotosSheet> {
 
     setState(() => _submitting = true);
 
+    // Compose crewNote from work type + optional crew note
+    final workType  = _workTypeCtrl.text.trim();
+    final crewNote  = _crewNoteCtrl.text.trim();
+    final highlight = _customerHighlightCtrl.text.trim();
+    final combinedNote = [
+      workType,
+      if (crewNote.isNotEmpty) crewNote,
+    ].join(' — ');
+
     final state = context.read<AppState>();
     await state.submitPhotos(
       jobId: _selectedJob!.id,
       jobName: '${_selectedJob!.customerName} — ${_selectedJob!.jobType}',
       pickedFiles: _pickedFiles,
       photoType: _selectedType,
-      crewNote: _noteController.text.trim().isEmpty ? null : _noteController.text.trim(),
+      crewNote: combinedNote,
+      customerHighlight: highlight.isNotEmpty ? highlight : null,
     );
 
     if (mounted) {
@@ -293,15 +313,79 @@ class _SubmitPhotosSheetState extends State<SubmitPhotosSheet> {
 
                   const SizedBox(height: 20),
 
-                  // 4 — Crew note (optional)
-                  _SectionLabel(label: '4. Note for Approver (optional)', icon: Icons.notes_rounded),
+                  // 4 — What work was completed? (required)
+                  _SectionLabel(label: '4. What work was completed?', icon: Icons.build_rounded, required: true),
                   const SizedBox(height: 8),
                   TextField(
-                    controller: _noteController,
-                    maxLines: 3,
+                    controller: _workTypeCtrl,
+                    maxLines: 1,
                     style: const TextStyle(color: TRColors.white, fontSize: 14),
                     decoration: InputDecoration(
-                      hintText: 'e.g. "Before tear-off on north slope" or any context for the reviewer…',
+                      hintText: 'e.g. Roof Replacement, Water Heater Install, Drain Cleaning…',
+                      hintStyle: const TextStyle(color: TRColors.grayMid, fontSize: 13),
+                      filled: true,
+                      fillColor: TRColors.cardDark,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: TRColors.divider),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: TRColors.divider),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: TRColors.gold),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // 5 — Anything worth mentioning? (optional)
+                  _SectionLabel(label: '5. Anything worth mentioning?', icon: Icons.notes_rounded),
+                  const SizedBox(height: 4),
+                  const Text('One sentence. e.g. Emergency repair, same-day service, storm damage.',
+                    style: TextStyle(color: TRColors.grayMid, fontSize: 11)),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _crewNoteCtrl,
+                    maxLines: 1,
+                    style: const TextStyle(color: TRColors.white, fontSize: 14),
+                    decoration: InputDecoration(
+                      hintText: 'Optional — one short sentence',
+                      hintStyle: const TextStyle(color: TRColors.grayMid, fontSize: 13),
+                      filled: true,
+                      fillColor: TRColors.cardDark,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: TRColors.divider),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: TRColors.divider),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: TRColors.gold),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // 6 — Customer Highlight (optional)
+                  _SectionLabel(label: '6. Customer Highlight?', icon: Icons.emoji_events_rounded),
+                  const SizedBox(height: 4),
+                  const Text('One sentence. e.g. Customer loved the result. Left the property spotless.',
+                    style: TextStyle(color: TRColors.grayMid, fontSize: 11)),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _customerHighlightCtrl,
+                    maxLines: 1,
+                    style: const TextStyle(color: TRColors.white, fontSize: 14),
+                    decoration: InputDecoration(
+                      hintText: 'Optional — one short sentence',
                       hintStyle: const TextStyle(color: TRColors.grayMid, fontSize: 13),
                       filled: true,
                       fillColor: TRColors.cardDark,
@@ -391,7 +475,8 @@ class _SubmitPhotosSheetState extends State<SubmitPhotosSheet> {
 class _SectionLabel extends StatelessWidget {
   final String label;
   final IconData icon;
-  const _SectionLabel({required this.label, required this.icon});
+  final bool required;
+  const _SectionLabel({required this.label, required this.icon, this.required = false});
 
   @override
   Widget build(BuildContext context) {
@@ -402,6 +487,10 @@ class _SectionLabel extends StatelessWidget {
         Text(label, style: const TextStyle(
           color: TRColors.grayLight, fontSize: 13, fontWeight: FontWeight.w600,
         )),
+        if (required) ...[
+          const SizedBox(width: 4),
+          const Text('*', style: TextStyle(color: TRColors.error, fontSize: 14, fontWeight: FontWeight.w700)),
+        ],
       ],
     );
   }

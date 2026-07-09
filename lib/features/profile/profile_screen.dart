@@ -59,6 +59,37 @@ class ProfileScreen extends StatelessWidget {
       ),
       child: Column(
         children: [
+          // Back to Home button row
+          Row(
+            children: [
+              GestureDetector(
+                onTap: () => Navigator.of(context).pop(),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: TRColors.navyDeep.withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: TRColors.divider),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.arrow_back_ios_rounded, color: TRColors.grayLight, size: 14),
+                      SizedBox(width: 4),
+                      Text('Home', style: TextStyle(
+                        color: TRColors.grayLight, fontSize: 13, fontWeight: FontWeight.w600,
+                      )),
+                    ],
+                  ),
+                ),
+              ),
+              const Spacer(),
+              const Text('Admin Portal', style: TextStyle(
+                color: TRColors.grayMid, fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.5,
+              )),
+            ],
+          ),
+          const SizedBox(height: 16),
           // Logo / Avatar area
           Row(
             children: [
@@ -172,6 +203,42 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
+  // ── Brand Voice ────────────────────────────────────────────────────────────
+
+  static const _brandVoiceOptions = [
+    ('professional',    'Professional',     'Trustworthy & quality-focused'),
+    ('friendly',        'Friendly',         'Warm & conversational'),
+    ('family_owned',    'Family-Owned',     'Personal & community-rooted'),
+    ('luxury',          'Luxury',           'Premium & sophisticated'),
+    ('educational',     'Educational',      'Informative & helpful'),
+    ('straightforward', 'Straightforward',  'Direct & no-nonsense'),
+    ('premium',         'Premium',          'High-quality & exclusive'),
+    ('bold',            'Bold',             'Punchy & confident'),
+    ('local_community', 'Local Community',  'Neighborly & place-based'),
+  ];
+
+  String _brandVoiceLabel(String key) {
+    for (final opt in _brandVoiceOptions) {
+      if (opt.$1 == key) return opt.$2;
+    }
+    return key;
+  }
+
+  void _showBrandVoiceSheet(BuildContext context, Company company, AppState state) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _BrandVoiceSheet(
+        currentVoice: company.brandVoice,
+        onSelect: (voice) async {
+          await state.updateBrandVoice(voice);
+          if (context.mounted) Navigator.pop(context);
+        },
+      ),
+    );
+  }
+
   void _showGbpOAuthSheet(BuildContext context, AppState state) {
     showModalBottomSheet<void>(
       context: context,
@@ -211,6 +278,15 @@ class ProfileScreen extends StatelessWidget {
                 : 'Not connected — tap to connect with Google',
             statusColor: state.googleConnected ? TRColors.success : TRColors.error,
             onTap: () => _showGbpOAuthSheet(context, state),
+          ),
+          _SettingsTile(
+            icon: Icons.record_voice_over_rounded,
+            title: 'Brand Voice',
+            subtitle: company.brandVoice != null
+                ? _brandVoiceLabel(company.brandVoice!)
+                : 'Not set — tap to choose your writing style',
+            statusColor: company.brandVoice != null ? TRColors.gold : null,
+            onTap: () => _showBrandVoiceSheet(context, company, state),
           ),
           _SettingsTile(
             icon: Icons.photo_library_rounded,
@@ -736,16 +812,30 @@ class _InviteTeamSheetState extends State<_InviteTeamSheet> {
     }
   }
 
-  /// Opens native SMS app pre-filled with the invite message.
+  /// Converts a string to proper Title Case.
+  String _toTitleCase(String input) {
+    if (input.isEmpty) return input;
+    return input.split(' ').map((word) {
+      if (word.isEmpty) return word;
+      return word[0].toUpperCase() + word.substring(1).toLowerCase();
+    }).join(' ');
+  }
+
+  /// Opens native SMS app pre-filled with the formatted invite message.
   Future<void> _sendSMS() async {
-    final name    = _sentName ?? '';
-    final company = _sentCompanyName ?? 'the team';
-    final body = Uri.encodeComponent(
-      'Hey $name! $_sentInviterName has added you to $company on TradeRep Pro — '
-      'the app we use to document jobs, collect reviews, and post to Google. '
-      'Search "TradeRep Pro" in the App Store or Google Play, sign up with this phone number, '
-      'and you\'ll automatically join the team. 👷',
-    );
+    final employeeName = _toTitleCase(_sentName ?? '');
+    final inviterName  = _toTitleCase(_sentInviterName ?? 'Your Admin');
+    final companyName  = _toTitleCase(_sentCompanyName ?? 'the team');
+
+    // Line-break formatted template — reads naturally on mobile SMS apps.
+    final message =
+        'Hey $employeeName! 👋\n\n'
+        '$inviterName has invited you to join $companyName on TradeRep Pro.\n\n'
+        'We use TradeRep Pro to document jobs, collect customer reviews, and showcase completed work.\n\n'
+        'Visit TradeRepPro.com to download the app.\n\n'
+        'Sign up using this phone number, and you\'ll automatically be added to the team.';
+
+    final body   = Uri.encodeComponent(message);
     final smsUri = Uri.parse('sms:${_sentPhone ?? ''}?body=$body');
     if (await canLaunchUrl(smsUri)) {
       await launchUrl(smsUri);
@@ -1604,6 +1694,110 @@ class _SettingsTile extends StatelessWidget {
             const Icon(Icons.chevron_right_rounded, color: TRColors.grayMid, size: 18),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BRAND VOICE SHEET
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _BrandVoiceSheet extends StatelessWidget {
+  final String? currentVoice;
+  final Future<void> Function(String voice) onSelect;
+
+  const _BrandVoiceSheet({required this.currentVoice, required this.onSelect});
+
+  static const _options = [
+    ('professional',    'Professional',     'Trustworthy & quality-focused',  Icons.verified_rounded),
+    ('friendly',        'Friendly',         'Warm & conversational',           Icons.sentiment_satisfied_rounded),
+    ('family_owned',    'Family-Owned',     'Personal & community-rooted',     Icons.home_rounded),
+    ('luxury',          'Luxury',           'Premium & sophisticated',          Icons.star_rounded),
+    ('educational',     'Educational',      'Informative & helpful',            Icons.school_rounded),
+    ('straightforward', 'Straightforward',  'Direct & no-nonsense',            Icons.straighten_rounded),
+    ('premium',         'Premium',          'High-quality & exclusive',         Icons.workspace_premium_rounded),
+    ('bold',            'Bold',             'Punchy & confident',               Icons.flash_on_rounded),
+    ('local_community', 'Local Community',  'Neighborly & place-based',        Icons.location_on_rounded),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: TRColors.navyMid,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        border: Border(top: BorderSide(color: TRColors.goldDark, width: 1.5)),
+      ),
+      padding: EdgeInsets.fromLTRB(20, 16, 20, 20 + MediaQuery.of(context).viewInsets.bottom),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 40, height: 4,
+            decoration: BoxDecoration(
+              color: TRColors.divider, borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Row(
+            children: [
+              Icon(Icons.record_voice_over_rounded, color: TRColors.gold, size: 20),
+              SizedBox(width: 10),
+              Text('Brand Voice', style: TextStyle(
+                color: TRColors.white, fontSize: 18, fontWeight: FontWeight.w800,
+              )),
+            ],
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Choose the writing style for AI-generated Google Business Profile posts.',
+            style: TextStyle(color: TRColors.grayMid, fontSize: 12),
+          ),
+          const SizedBox(height: 16),
+          ..._options.map((opt) {
+            final (key, label, desc, icon) = opt;
+            final isSelected = currentVoice == key;
+            return GestureDetector(
+              onTap: () => onSelect(key),
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  color: isSelected ? TRColors.goldDim : TRColors.cardDark,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: isSelected ? TRColors.gold : TRColors.divider,
+                    width: isSelected ? 1.5 : 1,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(icon, color: isSelected ? TRColors.gold : TRColors.grayMid, size: 20),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(label, style: TextStyle(
+                            color: isSelected ? TRColors.gold : TRColors.white,
+                            fontSize: 14, fontWeight: FontWeight.w700,
+                          )),
+                          Text(desc, style: const TextStyle(
+                            color: TRColors.grayMid, fontSize: 12,
+                          )),
+                        ],
+                      ),
+                    ),
+                    if (isSelected)
+                      const Icon(Icons.check_circle_rounded, color: TRColors.gold, size: 20),
+                  ],
+                ),
+              ),
+            );
+          }),
+          const SizedBox(height: 8),
+        ],
       ),
     );
   }
