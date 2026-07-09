@@ -14,6 +14,7 @@ import 'sms_service.dart';
 import 'gbp_service.dart';
 import 'gbp_auth_service.dart';
 import 'ai_service.dart';
+import 'analytics_service.dart';
 
 class AppState extends ChangeNotifier {
   final FirestoreService _fs = FirestoreService();
@@ -103,6 +104,12 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     // Await the Firestore write — throws on failure so caller can react
     await _fs.addJob(job);
+    // Analytics: record job_created event
+    AnalyticsService.recordEvent(
+      companyId: _fs.companyId,
+      eventType: ActivityEventType.jobCreated,
+      metadata: {'job_type': job.jobType, 'job_id': job.id},
+    );
   }
 
   void updateJob(Job updated) {
@@ -375,6 +382,12 @@ class AppState extends ChangeNotifier {
     if (result.success && result.message != null) {
       _smsLog.insert(0, result.message!);
       _markReviewSent(jobId, toPhone);
+      // Analytics: record review request sent event
+      AnalyticsService.recordEvent(
+        companyId: _fs.companyId,
+        eventType: ActivityEventType.reviewRequestSent,
+        metadata: {'job_id': jobId, 'job_type': jobType},
+      );
     }
 
     _smsSending = false;
@@ -573,6 +586,12 @@ class AppState extends ChangeNotifier {
       // Optimistic local insert
       _photoSubmissions = [submission, ..._photoSubmissions];
       notifyListeners();
+      // Analytics: record photos_uploaded event
+      AnalyticsService.recordEvent(
+        companyId: _fs.companyId,
+        eventType: ActivityEventType.photosUploaded,
+        metadata: {'job_id': jobId, 'photo_count': pickedFiles.length},
+      );
     } catch (e) {
       if (kDebugMode) debugPrint('submitPhotos error: $e');
     }
@@ -855,6 +874,12 @@ class AppState extends ChangeNotifier {
         hashtags: post.suggestedHashtags,
         jobType:  post.projectSummary,
       );
+      // Analytics: record google_post_published event
+      AnalyticsService.recordEvent(
+        companyId: _fs.companyId,
+        eventType: ActivityEventType.googlePostPublished,
+        metadata: {'post_id': post.id},
+      );
     }
 
     return result;
@@ -997,6 +1022,12 @@ class AppState extends ChangeNotifier {
     _onboardingComplete = true;
     debugPrint('[AppState] isLoggedIn = true — notifyListeners() → MainShell');
     notifyListeners(); // ← triggers navigation to MainShell IMMEDIATELY
+    // Analytics: record login event (fire-and-forget — never blocks navigation)
+    AnalyticsService.recordEvent(
+      companyId: firebaseUser.uid,
+      eventType: ActivityEventType.login,
+      metadata: {'uid': firebaseUser.uid},
+    );
     // Load Firestore data in background — never blocks navigation
     _initFirestoreStreams().catchError((e) {
       if (kDebugMode) debugPrint('[AppState] _initFirestoreStreams error: $e');
@@ -1105,6 +1136,13 @@ class AppState extends ChangeNotifier {
       } else {
         _subscription = fsSub;
       }
+
+      // Analytics: write monthly snapshot with subscription info (fire-and-forget)
+      AnalyticsService.writeMonthlySnapshot(
+        companyId:          _fs.companyId,
+        subscriptionStatus: _subscription.status.name,
+        seatCount:          _subscription.purchasedSeats,
+      );
 
       // Load analytics
       final fsAnalytics = await _fs.getAnalytics().timeout(fsTimeout, onTimeout: () {

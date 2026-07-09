@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../core/theme/app_theme.dart';
 import '../../shared/services/app_state.dart';
 import '../../shared/services/gbp_auth_service.dart';
@@ -13,6 +14,7 @@ import '../../shared/services/stripe_service.dart';
 import '../photos/photo_library_screen.dart';
 import 'help_support_screen.dart';
 import 'privacy_policy_screen.dart';
+import '../admin/platform_admin_screen.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -510,6 +512,25 @@ class ProfileScreen extends StatelessWidget {
             )),
           ),
           const SizedBox(height: 10),
+          // Platform admin entry — only visible to The Marketing Millennial
+          Builder(builder: (ctx) {
+            final adminEmail = FirebaseAuth.instance.currentUser?.email?.toLowerCase() ?? '';
+            final isPlatformAdmin = adminEmail == 'admin@themarketingmillennial.com' ||
+                adminEmail == 'hello@themarketingmillennial.com';
+            if (!isPlatformAdmin) return const SizedBox.shrink();
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _SettingsTile(
+                icon: Icons.admin_panel_settings_rounded,
+                title: 'Platform Admin Dashboard',
+                subtitle: 'Internal — The Marketing Millennial only',
+                statusColor: TRColors.gold,
+                onTap: () => Navigator.push(ctx, MaterialPageRoute(
+                  builder: (_) => const PlatformAdminScreen(),
+                )),
+              ),
+            );
+          }),
           GestureDetector(
             onTap: () {
               showDialog(context: context, builder: (_) => AlertDialog(
