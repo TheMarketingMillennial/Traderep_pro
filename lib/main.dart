@@ -87,6 +87,37 @@ Future<void> _initFirebase() async {
   }
 }
 
+// ─── Auth loading splash — shown for ~200 ms while Firebase restores session ──
+/// Prevents the login screen flashing on web refresh when the user is already
+/// authenticated. Firebase Auth restores sessions from localStorage, but the
+/// first authStateChanges() event arrives asynchronously — this widget bridges
+/// that gap with a matching dark background.
+class _AuthLoadingSplash extends StatelessWidget {
+  const _AuthLoadingSplash();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      backgroundColor: Color(0xFF0A1730), // matches AppTheme dark background
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 36,
+              height: 36,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.5,
+                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF3B82F6)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 // ─── Error screen shown when a fatal zone error occurs ───────────────────────
 class _ErrorApp extends StatelessWidget {
   final String error;
@@ -155,9 +186,14 @@ class TradeRepApp extends StatelessWidget {
             theme: AppTheme.lightTheme,
             darkTheme: AppTheme.darkTheme,
             themeMode: state.themeMode,
-            home: state.isLoggedIn
-                ? const MainShell()
-                : const OnboardingScreen(),
+            home: !state.authCheckComplete
+                // Auth state not yet resolved — show a brief loading splash.
+                // This prevents the login screen from flashing before Firebase
+                // restores the session on web refresh.
+                ? const _AuthLoadingSplash()
+                : state.isLoggedIn
+                    ? const MainShell()
+                    : const OnboardingScreen(),
           );
         },
       ),

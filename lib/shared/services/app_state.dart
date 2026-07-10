@@ -29,9 +29,14 @@ class AppState extends ChangeNotifier {
   StreamSubscription<List<PhotoSubmission>>? _photoSubmissionsSub;
   StreamSubscription<List<TeamInvite>>? _pendingInvitesSub;
   StreamSubscription<ActiveSubscription>? _subscriptionSub;
+  StreamSubscription<User?>? _authStateSub; // Firebase Auth persistence listener
 
   // ─── Auth State ─────────────────────────────────────────────────────────────
   bool _isLoggedIn = false;
+  /// True once the Firebase Auth state check has completed on startup.
+  /// While false, the app shows a loading splash instead of the login screen.
+  bool _authCheckComplete = false;
+  bool get authCheckComplete => _authCheckComplete;
   bool _onboardingComplete = false;
   TRUser? _currentUser;
   Company? _company;
@@ -53,6 +58,56 @@ class AppState extends ChangeNotifier {
   // ─── Theme ──────────────────────────────────────────────────────────────────
   ThemeMode _themeMode = ThemeMode.dark;
   ThemeMode get themeMode => _themeMode;
+
+  // ─── Constructor — subscribe to Firebase Auth state for session persistence ──
+  AppState() {
+    _subscribeToAuthState();
+  }
+
+  /// Listens to Firebase Auth state changes.
+  /// On web, Firebase restores the session from localStorage immediately after
+  /// the first event. Without this listener, refreshing the browser always
+  /// sends the user back to the login screen because AppState starts with
+  /// _isLoggedIn = false.
+  void _subscribeToAuthState() {
+    if (!AppConfig.isFirebaseConfigured) {
+      // No Firebase — mark check complete so the app doesn't hang on the splash.
+      _authCheckComplete = true;
+      return;
+    }
+    _authStateSub = FirebaseAuth.instance.authStateChanges().listen(
+      (User? user) {
+        if (_isLoggedIn) {
+          // Already logged in (e.g. from SignInScreen) — nothing to do on
+          // subsequent events unless the user signs out externally.
+          if (user == null) {
+            // Signed out from another tab or token revoked.
+            logout();
+          }
+          return;
+        }
+        if (user != null) {
+          // Firebase restored an existing session (web refresh, app reopen).
+          debugPrint('[AppState] Auth state restored — uid: ${user.uid}');
+          onFirebaseSignIn(user);
+        } else {
+          debugPrint('[AppState] Auth state: no user (unauthenticated)');
+        }
+        // Mark auth check done so the splash screen gives way to the real UI.
+        if (!_authCheckComplete) {
+          _authCheckComplete = true;
+          notifyListeners();
+        }
+      },
+      onError: (e) {
+        debugPrint('[AppState] authStateChanges error: $e');
+        if (!_authCheckComplete) {
+          _authCheckComplete = true;
+          notifyListeners();
+        }
+      },
+    );
+  }
 
   void toggleTheme() {
     _themeMode = _themeMode == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
@@ -1278,6 +1333,7 @@ class AppState extends ChangeNotifier {
   @override
   void dispose() {
     _cancelStreams();
+    _authStateSub?.cancel(); // cancel auth listener when AppState is torn down
     super.dispose();
   }
 }

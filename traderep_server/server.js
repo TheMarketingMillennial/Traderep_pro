@@ -172,6 +172,7 @@ Write a Google Business Profile post following these rules:
 - Sound like the contractor wrote it themselves — real, not corporate
 - Location mention is optional — only include if it fits naturally
 - Include 1–2 emojis placed naturally (not at the start)
+- PRIVACY RULE — CRITICAL: Do NOT include any customer names, homeowner names, property owner names, or any personally identifiable information. Never refer to anyone by name. Always use generic terms such as "the customer", "our client", "the homeowner", or "a local homeowner". This rule overrides everything else.
 
 Also generate 6 relevant hashtags (no spaces, each starting with #).
 Mix trade-specific tags with local/general ones.
