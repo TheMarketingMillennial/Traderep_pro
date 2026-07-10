@@ -133,7 +133,16 @@ class _SendSmsSheetState extends State<SendSmsSheet> {
 
   Future<void> _send() async {
     _validatePhone(_phoneCtrl.text);
-    if (_phoneError != null) return;
+    if (_phoneError != null) {
+      // Phone number is invalid — the red error text shows under the field,
+      // but also show a snackbar so it's impossible to miss.
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Please enter a valid phone number: $_phoneError'),
+        backgroundColor: TRColors.error,
+        duration: const Duration(seconds: 4),
+      ));
+      return;
+    }
 
     // Block send if crew hasn't filled required variable fields
     if (!_variablesFilled) {
@@ -191,11 +200,12 @@ class _SendSmsSheetState extends State<SendSmsSheet> {
     if (!mounted) return;
     setState(() => _sending = false);
 
-    Navigator.pop(context, result);
-
     if (result.success) {
+      // Show success snackbar then dismiss the sheet
       final msg = result.message;
       final isMock = msg?.isMock ?? true;
+      // Pop first — success snackbar shows on the screen below
+      Navigator.pop(context, result);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Row(children: [
           const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
@@ -210,10 +220,24 @@ class _SendSmsSheetState extends State<SendSmsSheet> {
         duration: const Duration(seconds: 4),
       ));
     } else {
+      // KEEP the sheet open so user can correct the phone number or retry.
+      // Show the error inside the sheet context (still mounted).
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Failed to send: ${result.error}'),
+        content: Row(children: [
+          const Icon(Icons.error_rounded, color: Colors.white, size: 18),
+          const SizedBox(width: 8),
+          Expanded(child: Text(
+            result.error ?? 'Failed to send SMS. Check the phone number and try again.',
+            style: const TextStyle(fontSize: 13),
+          )),
+        ]),
         backgroundColor: TRColors.error,
-        duration: const Duration(seconds: 5),
+        duration: const Duration(seconds: 8),
+        action: SnackBarAction(
+          label: 'Dismiss',
+          textColor: Colors.white70,
+          onPressed: () {},
+        ),
       ));
     }
   }

@@ -3,7 +3,7 @@
 // Shows every upload session chronologically.
 // Admins can view, download, search, filter, and delete sessions/photos.
 
-import 'package:flutter/foundation.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_theme.dart';
@@ -396,15 +396,26 @@ class _SessionCard extends StatelessWidget {
   }
 
   void _downloadAll(BuildContext ctx, PhotoSubmission session) {
+    final photos = session.photos.where((p) => p.networkUrl != null).toList();
+    if (photos.isEmpty) {
+      ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(
+        content: Text('No photos available to download.'),
+        backgroundColor: TRColors.warning,
+      ));
+      return;
+    }
     ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-      content: Text('Downloading ${session.photos.length} photos from ${session.submittedByName}…'),
+      content: Text('Opening ${photos.length} photo${photos.length == 1 ? "" : "s"} — save each from the new tab'),
       backgroundColor: TRColors.info,
+      duration: const Duration(seconds: 4),
     ));
-    // Web: trigger individual downloads; mobile: save to gallery
-    for (final photo in session.photos) {
-      if (photo.networkUrl != null && kDebugMode) {
-        debugPrint('Download: ${photo.networkUrl}');
-      }
+    // Open each photo in a new browser tab — Firebase URL has auth token baked in.
+    // User can right-click → Save As in the tab, or use the browser download button.
+    for (final photo in photos) {
+      launchUrl(
+        Uri.parse(photo.networkUrl!),
+        mode: LaunchMode.externalApplication,
+      );
     }
   }
 
@@ -611,10 +622,13 @@ class _PhotoViewerScreenState extends State<_PhotoViewerScreen> {
             icon: const Icon(Icons.download_rounded, color: TRColors.white),
             onPressed: () {
               final url = photo.networkUrl;
-              if (url != null && kDebugMode) debugPrint('Download: $url');
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Downloading photo…'), backgroundColor: TRColors.info),
-              );
+              if (url != null) {
+                launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Photo URL not available.'), backgroundColor: TRColors.warning),
+                );
+              }
             },
           ),
         ],

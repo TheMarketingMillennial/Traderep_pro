@@ -136,8 +136,11 @@ class AppState extends ChangeNotifier {
   int get reviewsSentCount => _jobs.where((j) => j.reviewSent).length;
 
   /// Total photos across all jobs.
+  /// Total photos uploaded via the photo submission system (crew uploads).
+  /// Counts photos with a real Storage URL across all approved + pending submissions.
   int get photosUploadedCount =>
-      _jobs.fold(0, (sum, j) => sum + j.photos.length);
+      _photoSubmissions.fold(0, (sum, s) =>
+          sum + s.photos.where((p) => p.networkUrl != null).length);
 
   /// Published Google posts.
   int get googlePostsCount =>
