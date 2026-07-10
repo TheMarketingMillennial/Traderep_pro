@@ -3,12 +3,48 @@
 // Shows every upload session chronologically.
 // Admins can view, download, search, filter, and delete sessions/photos.
 
-import 'package:url_launcher/url_launcher.dart';
+import 'dart:async';
+import 'dart:js_interop';
+import 'package:web/web.dart' as web;
+import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_theme.dart';
 import '../../shared/services/app_state.dart';
 import '../../shared/models/models.dart';
+
+// ─── Download Helper ──────────────────────────────────────────────────────────
+// Fetches image bytes and triggers a browser-native "Save" prompt so the file
+// lands in the device's Downloads / Camera Roll — no new tab required.
+Future<void> _downloadImageToDevice(String url, String filename) async {
+  try {
+    // Fetch raw bytes (Firebase Storage URLs embed auth token in query string)
+    final response = await http.get(Uri.parse(url));
+    if (response.statusCode != 200) return;
+
+    // Wrap bytes in a Blob and create a temporary object URL
+    final blob    = web.Blob(
+      [response.bodyBytes.toJS].toJS,
+      web.BlobPropertyBag(type: 'image/jpeg'),
+    );
+    final blobUrl = web.URL.createObjectURL(blob);
+
+    // Create a hidden <a download="filename"> and click it — triggers native Save
+    final anchor  = web.document.createElement('a') as web.HTMLAnchorElement
+      ..href = blobUrl
+      ..download = filename
+      ..style.display = 'none';
+    web.document.body!.appendChild(anchor);
+    anchor.click();
+
+    // Clean up immediately
+    anchor.remove();
+    web.URL.revokeObjectURL(blobUrl);
+  } catch (e) {
+    if (kDebugMode) debugPrint('[PhotoDownload] Failed to download $filename: $e');
+  }
+}
 
 // ─── Entry Point ──────────────────────────────────────────────────────────────
 class PhotoLibraryScreen extends StatefulWidget {
@@ -405,18 +441,28 @@ class _SessionCard extends StatelessWidget {
       return;
     }
     ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-      content: Text('Opening ${photos.length} photo${photos.length == 1 ? "" : "s"} — save each from the new tab'),
+      content: Text('Saving ${photos.length} photo${photos.length == 1 ? "" : "s"} to your device…'),
       backgroundColor: TRColors.info,
-      duration: const Duration(seconds: 4),
+      duration: const Duration(seconds: 3),
     ));
-    // Open each photo in a new browser tab — Firebase URL has auth token baked in.
-    // User can right-click → Save As in the tab, or use the browser download button.
-    for (final photo in photos) {
-      launchUrl(
-        Uri.parse(photo.networkUrl!),
-        mode: LaunchMode.externalApplication,
-      );
+    // Fetch bytes and trigger a native Save prompt for each photo — no new tab.
+    for (var i = 0; i < photos.length; i++) {
+      final photo    = photos[i];
+      final ext      = _guessExt(photo.networkUrl!);
+      final filename = '${session.jobName.replaceAll(RegExp(r'[^\w]'), '_')}_photo_${i + 1}$ext';
+      // Stagger requests slightly so the browser doesn't block them as a popup storm
+      Future.delayed(Duration(milliseconds: i * 300), () {
+        _downloadImageToDevice(photo.networkUrl!, filename);
+      });
     }
+  }
+
+  /// Extracts a safe file extension from a Firebase Storage URL.
+  String _guessExt(String url) {
+    final lower = url.toLowerCase();
+    if (lower.contains('.png'))  return '.png';
+    if (lower.contains('.webp')) return '.webp';
+    return '.jpg';
   }
 
   void _downloadZip(BuildContext ctx, PhotoSubmission session) {
@@ -478,10 +524,27 @@ class _SessionMenu extends StatelessWidget {
       onSelected: (action) {
         switch (action) {
           case 'download':
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text('Downloading ${session.photos.length} photos…'),
-              backgroundColor: TRColors.info,
-            ));
+            // Re-use the same direct-download helper used by the Download button
+            final photos = session.photos.where((p) => p.networkUrl != null).toList();
+            if (photos.isEmpty) {
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                content: Text('No photos to download.'),
+                backgroundColor: TRColors.warning,
+              ));
+            } else {
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text('Saving ${photos.length} photo${photos.length == 1 ? "" : "s"} to your device…'),
+                backgroundColor: TRColors.info,
+              ));
+              for (var i = 0; i < photos.length; i++) {
+                final photo    = photos[i];
+                final ext      = photo.networkUrl!.toLowerCase().contains('.png') ? '.png' : '.jpg';
+                final filename = '${session.jobName.replaceAll(RegExp(r"[^\w]"), "_")}_photo_${i + 1}$ext';
+                Future.delayed(Duration(milliseconds: i * 300), () {
+                  _downloadImageToDevice(photo.networkUrl!, filename);
+                });
+              }
+            }
           case 'zip':
             ScaffoldMessenger.of(context).showSnackBar(SnackBar(
               content: Text('Preparing ZIP for ${session.photos.length} photos…'),
@@ -623,7 +686,16 @@ class _PhotoViewerScreenState extends State<_PhotoViewerScreen> {
             onPressed: () {
               final url = photo.networkUrl;
               if (url != null) {
-                launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+                final ext      = url.toLowerCase().contains('.png') ? '.png' : '.jpg';
+                final filename = 'photo_${_current + 1}$ext';
+                _downloadImageToDevice(url, filename);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Saving photo to your device…'),
+                    backgroundColor: TRColors.info,
+                    duration: Duration(seconds: 2),
+                  ),
+                );
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Photo URL not available.'), backgroundColor: TRColors.warning),

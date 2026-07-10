@@ -1006,7 +1006,7 @@ class _StepGuide extends StatelessWidget {
               Icon(Icons.info_outline_rounded,
                   color: Color(0xFF4285F4), size: 16),
               SizedBox(width: 8),
-              Text('How to post to Google Business',
+              Text('Manual Posting Instructions',
                   style: TextStyle(
                       color: Color(0xFF4285F4),
                       fontSize: 13,
@@ -1431,8 +1431,8 @@ class _SetupGbpBanner extends StatelessWidget {
                 ),
                 SizedBox(height: 4),
                 Text(
-                  'Set your GBP Location ID in Profile → Google Business Profile '
-                  'to publish directly from this screen — no copy/paste needed.',
+                  'Connect your Google Business Profile in Profile → Google Business Profile '
+                  'to enable one-tap publishing directly from this screen — no copy/paste needed.',
                   style: TextStyle(
                       color: TRColors.grayMid,
                       fontSize: 12,
