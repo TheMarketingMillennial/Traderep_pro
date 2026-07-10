@@ -40,6 +40,67 @@ class _MainShellState extends State<MainShell> {
   void _switchTab(int index) => setState(() => _currentIndex = index);
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Wire up new-pending-submission notification for admins.
+    // Called in didChangeDependencies so we get the Provider-provided AppState.
+    final state = context.read<AppState>();
+    state.onNewPendingSubmissions = _onNewPendingArrived;
+  }
+
+  @override
+  void dispose() {
+    // Clear the callback so AppState doesn't hold a reference to a dead widget.
+    final state = context.read<AppState>();
+    state.onNewPendingSubmissions = null;
+    super.dispose();
+  }
+
+  void _onNewPendingArrived(int count) {
+    if (!mounted) return;
+    final plural = count == 1 ? 'photo submission needs' : 'photo submissions need';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(children: [
+          Container(
+            width: 32, height: 32,
+            decoration: BoxDecoration(
+              color: TRColors.warning.withValues(alpha: 0.2),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.photo_camera_rounded, color: TRColors.warning, size: 18),
+          ),
+          const SizedBox(width: 12),
+          Expanded(child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '$count new $plural review',
+                style: const TextStyle(color: TRColors.white, fontSize: 13, fontWeight: FontWeight.w700),
+              ),
+              const Text('Tap to open the Photos screen',
+                style: TextStyle(color: TRColors.grayLight, fontSize: 11)),
+            ],
+          )),
+        ]),
+        backgroundColor: TRColors.cardDark,
+        duration: const Duration(seconds: 6),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: TRColors.warning.withValues(alpha: 0.4)),
+        ),
+        action: SnackBarAction(
+          label: 'Review',
+          textColor: TRColors.warning,
+          onPressed: () => setState(() => _currentIndex = 2), // Photos tab
+        ),
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
 

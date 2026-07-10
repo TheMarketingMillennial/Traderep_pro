@@ -509,6 +509,14 @@ class AppState extends ChangeNotifier {
   List<PhotoSubmission> get pendingSubmissions =>
       _photoSubmissions.where((s) => s.status == PhotoSubmissionStatus.pending).toList();
 
+  /// Callback fired when new pending submissions arrive from Firestore.
+  /// The integer is the count of NEW submissions since the last check.
+  /// Admins can subscribe to this to show an in-app snackbar/banner.
+  void Function(int newCount)? onNewPendingSubmissions;
+
+  // Tracks the count from the last stream event so we can detect arrivals.
+  int _lastKnownPendingCount = 0;
+
   /// True if the current user can approve/reject submissions.
   /// Roles: admin, officeManager, salesRep (marketing).
   bool get canApprovePhotos {
@@ -1088,6 +1096,7 @@ class AppState extends ChangeNotifier {
     _templates = ProjectTemplate.defaultTemplates;
     _analytics = AnalyticsSummary.empty;
     _photoSubmissions = [];
+    _lastKnownPendingCount = 0;
     _smsLog.clear();
     notifyListeners();
   }
@@ -1207,8 +1216,20 @@ class AppState extends ChangeNotifier {
       });
 
       _photoSubmissionsSub = _fs.photoSubmissionsStream().listen((subs) {
+        final newPending = subs.where((s) => s.status == PhotoSubmissionStatus.pending).length;
         _photoSubmissions = subs;
         notifyListeners();
+
+        // Fire new-pending notification when count increases.
+        // Only fires for admin-capable roles; skips the very first load
+        // (when _lastKnownPendingCount == 0 and we haven't set a baseline yet).
+        if (canApprovePhotos &&
+            _lastKnownPendingCount > 0 &&
+            newPending > _lastKnownPendingCount) {
+          final arrived = newPending - _lastKnownPendingCount;
+          onNewPendingSubmissions?.call(arrived);
+        }
+        _lastKnownPendingCount = newPending;
       }, onError: (e) {
         if (kDebugMode) debugPrint('PhotoSubmissions stream error: $e');
       });

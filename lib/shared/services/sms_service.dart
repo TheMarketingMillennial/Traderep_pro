@@ -107,15 +107,15 @@ class SmsService {
         );
       }
     } on Exception catch (e) {
-      // Server unreachable — fall through to local mock fallback
-      if (kDebugMode) debugPrint('SMS server unreachable: $e — using local mock');
-      return _localMockSend(
-        toPhone: e164,
-        body: body,
-        jobId: jobId,
+      // Server is unreachable — surface a clear error so the UI can inform the
+      // user instead of silently pretending the SMS was sent.
+      // Common causes: Railway server down, no internet, wrong SMS_SERVER_URL.
+      if (kDebugMode) debugPrint('[SmsService] Server unreachable: $e');
+      return SmsResult.failure(
+        error: 'Could not reach the SMS server. '
+            'Check your internet connection or contact support if this persists.',
+        toPhone: toPhone,
         templateKey: templateKey,
-        customerName: customerName,
-        type: type,
       );
     }
   }
@@ -137,38 +137,6 @@ class SmsService {
       if (kDebugMode) debugPrint('fetchLog error: $e');
     }
     return [];
-  }
-
-  // ── Local Mock Fallback ─────────────────────────────────────────────────────
-  // Used when Railway server is unreachable (e.g. no internet, local dev).
-  // Produces a realistic SmsMessage so the UI still works fully.
-  SmsResult _localMockSend({
-    required String toPhone,
-    required String body,
-    required String jobId,
-    required String templateKey,
-    required String customerName,
-    required SmsType type,
-  }) {
-    final id = 'LOCAL_${DateTime.now().millisecondsSinceEpoch}';
-    final message = SmsMessage(
-      id: id,
-      sid: 'LOCAL_MOCK_$id',
-      jobId: jobId,
-      companyId: 'co_001',
-      customerName: customerName,
-      toPhone: toPhone,
-      body: body,
-      type: type,
-      status: SmsStatus.delivered,
-      templateKey: templateKey,
-      isMock: true,
-      sentAt: DateTime.now(),
-    );
-    if (kDebugMode) {
-      debugPrint('[LOCAL MOCK] SMS to $toPhone | $templateKey | $body');
-    }
-    return SmsResult.success(message: message);
   }
 
   // ── Parser ──────────────────────────────────────────────────────────────────

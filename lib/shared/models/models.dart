@@ -510,7 +510,17 @@ class PhotoSubmission {
 
   static DateTime _parseDate(dynamic d) {
     if (d == null) return DateTime.now();
-    try { return DateTime.parse(d as String); } catch (_) { return DateTime.now(); }
+    // Firestore Timestamp — has a toDate() method. Use duck-typing so we
+    // don't need to import cloud_firestore in the pure model layer.
+    try {
+      final maybeFn = (d as dynamic).toDate;
+      if (maybeFn != null) return (maybeFn as Function)() as DateTime;
+    } catch (_) {}
+    // ISO-8601 string fallback
+    if (d is String) {
+      return DateTime.tryParse(d) ?? DateTime.now();
+    }
+    return DateTime.now();
   }
 
   // ── Sample data for UI preview ─────────────────────────────────────────────
