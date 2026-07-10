@@ -7,6 +7,7 @@ import '../../core/theme/app_theme.dart';
 import '../../shared/services/app_state.dart';
 import '../../shared/services/auth_service.dart';
 import '../../shared/widgets/tr_widgets.dart';
+import 'consent_modal.dart';
 
 class SignUpScreen extends StatefulWidget {
   const SignUpScreen({super.key});
@@ -60,9 +61,20 @@ class _SignUpScreenState extends State<SignUpScreen> {
       debugPrint('[SignUpScreen] Form validation failed');
       return;
     }
-    setState(() { _loading = true; _error = null; });
-    debugPrint('[SignUpScreen] Calling AuthService.signUp...');
 
+    // ── Step 1: Show consent modal — account is NOT created yet ──────────────
+    final consent = await showConsentModal(context);
+    if (!mounted) return;
+    if (consent == null) {
+      // User cancelled — preserve form fields, do nothing
+      debugPrint('[SignUpScreen] Consent modal cancelled — account creation aborted');
+      return;
+    }
+
+    setState(() { _loading = true; _error = null; });
+    debugPrint('[SignUpScreen] Consent accepted — calling AuthService.signUp...');
+
+    // ── Step 2: Create Firebase Auth account ──────────────────────────────────
     final result = await AuthService.instance.signUp(
       email: _emailCtrl.text,
       password: _passCtrl.text,
@@ -81,15 +93,27 @@ class _SignUpScreenState extends State<SignUpScreen> {
       return;
     }
 
-    // ── Success: clear stack and navigate to MainShell ────────────────────────
-    debugPrint('[SignUpScreen] SignUp SUCCESS — clearing stack and navigating to MainShell');
+    // ── Step 3: Save consent record to Firestore (fire-and-forget) ────────────
+    final uid = result.user!.uid;
+    AuthService.instance.saveConsentRecord(
+      uid:                     uid,
+      companyId:               uid, // company doc is keyed to the owner's UID
+      termsAccepted:           consent.termsAccepted,
+      termsAcceptedAt:         consent.acceptedAt,
+      termsVersion:            kTermsVersion,
+      privacyAccepted:         consent.privacyAccepted,
+      privacyAcceptedAt:       consent.acceptedAt,
+      privacyVersion:          kPrivacyVersion,
+      marketingOptIn:          consent.marketingOptIn,
+      marketingConsentLanguage: kMarketingConsentLanguage,
+    );
 
+    // ── Step 4: Navigate into the app ─────────────────────────────────────────
+    debugPrint('[SignUpScreen] SignUp SUCCESS — clearing stack and navigating to MainShell');
     setState(() { _loading = false; });
 
-    // Update state (triggers isLoggedIn = true) THEN pop back to root so
-    // MaterialApp's home swap to MainShell is visible immediately.
     final state = context.read<AppState>();
-    state.onFirebaseSignIn(result.user); // sets isLoggedIn = true immediately
+    state.onFirebaseSignIn(result.user);
 
     debugPrint('[SignUpScreen] Popping to root — MainShell will be home');
     Navigator.of(context).popUntil((route) => route.isFirst);
@@ -285,9 +309,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
                 ),
                 const SizedBox(height: 16),
 
-                // Terms note
+                const SizedBox(height: 8),
                 const Text(
-                  'By creating an account you agree to our Terms of Service and Privacy Policy.',
+                  'You will be asked to review and accept our Terms of Service and Privacy Policy before your account is created.',
                   style: TextStyle(color: TRColors.grayMid, fontSize: 11),
                   textAlign: TextAlign.center,
                 ),

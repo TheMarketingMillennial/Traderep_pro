@@ -262,6 +262,53 @@ class AuthService {
     }
   }
 
+  // ─── Consent Record ───────────────────────────────────────────────────────
+  /// Writes the user's consent record to Firestore after account creation.
+  /// Called immediately after [signUp] succeeds with the user's UID and
+  /// the [ConsentResult] returned by the consent modal.
+  Future<void> saveConsentRecord({
+    required String uid,
+    required String companyId,
+    required bool   termsAccepted,
+    required DateTime termsAcceptedAt,
+    required String termsVersion,
+    required bool   privacyAccepted,
+    required DateTime privacyAcceptedAt,
+    required String privacyVersion,
+    required bool   marketingOptIn,
+    required String marketingConsentLanguage,
+  }) async {
+    if (!isAvailable) return;
+    try {
+      final data = <String, dynamic>{
+        'uid':                    uid,
+        'company_id':             companyId,
+        'terms_accepted':         termsAccepted,
+        'terms_accepted_at':      Timestamp.fromDate(termsAcceptedAt),
+        'terms_version':          termsVersion,
+        'privacy_accepted':       privacyAccepted,
+        'privacy_accepted_at':    Timestamp.fromDate(privacyAcceptedAt),
+        'privacy_version':        privacyVersion,
+        'marketing_opt_in':       marketingOptIn,
+        'marketing_opt_in_source':'create_account_consent_modal',
+        'marketing_consent_language': marketingConsentLanguage,
+        'recorded_at':            FieldValue.serverTimestamp(),
+      };
+      if (marketingOptIn) {
+        data['marketing_opt_in_at'] = Timestamp.fromDate(termsAcceptedAt);
+      }
+      await _db
+          .collection('consent_records')
+          .doc(uid)
+          .set(data)
+          .timeout(const Duration(seconds: 10));
+      debugPrint('[AuthService] Consent record saved for uid: $uid');
+    } catch (e) {
+      // Non-fatal — account is already created; log and continue
+      debugPrint('[AuthService] Warning: consent record write failed: $e');
+    }
+  }
+
   // ─── Sign Out ──────────────────────────────────────────────────────────────
   Future<void> signOut() async {
     debugPrint('[AuthService] signOut() called');
