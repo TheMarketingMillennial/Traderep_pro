@@ -8,6 +8,7 @@ import '../../shared/models/models.dart';
 import '../pricing/trial_widgets.dart';
 import '../photos/photo_approval_screen.dart';
 import '../profile/profile_screen.dart';
+import '../jobs/job_detail_screen.dart';
 
 class DashboardScreen extends StatelessWidget {
   final void Function(int)? onSwitchTab;
@@ -201,24 +202,28 @@ class DashboardScreen extends StatelessWidget {
                 value: '${state.completedJobsCount}',
                 icon: Icons.check_circle_rounded,
                 accentColor: TRColors.success,
+                onTap: () => onSwitchTab?.call(1),
               ),
               TRStatCard(
                 label: 'Reviews Sent',
                 value: '${state.reviewsSentCount}',
                 icon: Icons.star_rounded,
                 accentColor: TRColors.gold,
+                onTap: () => onSwitchTab?.call(1),
               ),
               TRStatCard(
                 label: 'Photos Uploaded',
                 value: '${state.photosUploadedCount}',
                 icon: Icons.photo_library_rounded,
                 accentColor: TRColors.info,
+                onTap: () => onSwitchTab?.call(2),
               ),
               TRStatCard(
                 label: 'Google Posts',
                 value: '${state.googlePostsCount}',
                 icon: Icons.business_rounded,
                 accentColor: TRColors.statusLead,
+                onTap: () => onSwitchTab?.call(3),
               ),
             ],
           ),
@@ -313,7 +318,13 @@ class DashboardScreen extends StatelessWidget {
             onAction: () => onSwitchTab?.call(1),
           ),
           const SizedBox(height: 12),
-          ...jobs.map((job) => JobCard(job: job)),
+          ...jobs.map((job) => JobCard(
+            job: job,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => JobDetailScreen(job: job)),
+            ),
+          )),
         ],
       ),
     );
@@ -550,43 +561,58 @@ class _TeamMemberTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: TRColors.cardDark,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const ProfileScreen()),
+        ),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: TRColors.divider),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 38, height: 38,
-            decoration: BoxDecoration(
-              color: TRColors.navyLight,
-              shape: BoxShape.circle,
-              border: Border.all(color: TRColors.divider),
-            ),
-            child: Center(child: Text(
-              user.name.substring(0, 1),
-              style: const TextStyle(color: TRColors.gold, fontSize: 15, fontWeight: FontWeight.w700),
-            )),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: TRColors.cardDark,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: TRColors.divider),
           ),
-          const SizedBox(width: 12),
-          Expanded(child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
             children: [
-              Text(user.name, style: const TextStyle(
-                color: TRColors.white, fontSize: 14, fontWeight: FontWeight.w600,
+              Container(
+                width: 38, height: 38,
+                decoration: BoxDecoration(
+                  color: TRColors.navyLight,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: TRColors.divider),
+                ),
+                child: Center(child: Text(
+                  user.name.substring(0, 1),
+                  style: const TextStyle(color: TRColors.gold, fontSize: 15, fontWeight: FontWeight.w700),
+                )),
+              ),
+              const SizedBox(width: 12),
+              Expanded(child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(user.name, style: const TextStyle(
+                    color: TRColors.white, fontSize: 14, fontWeight: FontWeight.w600,
+                  )),
+                  RoleBadge(role: user.role),
+                ],
               )),
-              RoleBadge(role: user.role),
+              Row(children: [
+                Container(
+                  width: 8, height: 8,
+                  decoration: const BoxDecoration(color: TRColors.success, shape: BoxShape.circle),
+                ),
+                const SizedBox(width: 8),
+                Icon(Icons.arrow_forward_ios_rounded,
+                    color: TRColors.grayMid.withValues(alpha: 0.5), size: 12),
+              ]),
             ],
-          )),
-          Container(
-            width: 8, height: 8,
-            decoration: const BoxDecoration(color: TRColors.success, shape: BoxShape.circle),
           ),
-        ],
+        ),
       ),
     );
   }

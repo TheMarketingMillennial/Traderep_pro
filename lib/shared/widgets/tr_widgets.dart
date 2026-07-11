@@ -195,6 +195,7 @@ class TRStatCard extends StatelessWidget {
   final IconData icon;
   final Color? accentColor;
   final String? trend;
+  final VoidCallback? onTap;
 
   const TRStatCard({
     super.key,
@@ -203,54 +204,69 @@ class TRStatCard extends StatelessWidget {
     required this.icon,
     this.accentColor,
     this.trend,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final color = accentColor ?? TRColors.gold;
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: TRColors.cardDark,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: TRColors.divider),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: TRColors.cardDark,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: onTap != null
+                  ? color.withValues(alpha: 0.25)
+                  : TRColors.divider,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(icon, color: color, size: 20),
-              ),
-              if (trend != null)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: TRColors.success.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(icon, color: color, size: 20),
                   ),
-                  child: Text(trend!, style: const TextStyle(
-                    color: TRColors.success, fontSize: 11, fontWeight: FontWeight.w600,
-                  )),
-                ),
+                  if (trend != null)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: TRColors.success.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(trend!, style: const TextStyle(
+                        color: TRColors.success, fontSize: 11, fontWeight: FontWeight.w600,
+                      )),
+                    )
+                  else if (onTap != null)
+                    Icon(Icons.arrow_forward_ios_rounded,
+                        color: color.withValues(alpha: 0.5), size: 12),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(value, style: const TextStyle(
+                color: TRColors.white, fontSize: 26, fontWeight: FontWeight.w800,
+              )),
+              const SizedBox(height: 2),
+              Text(label, style: const TextStyle(
+                color: TRColors.grayLight, fontSize: 12, fontWeight: FontWeight.w500,
+              )),
             ],
           ),
-          const SizedBox(height: 12),
-          Text(value, style: const TextStyle(
-            color: TRColors.white, fontSize: 26, fontWeight: FontWeight.w800,
-          )),
-          const SizedBox(height: 2),
-          Text(label, style: const TextStyle(
-            color: TRColors.grayLight, fontSize: 12, fontWeight: FontWeight.w500,
-          )),
-        ],
+        ),
       ),
     );
   }
