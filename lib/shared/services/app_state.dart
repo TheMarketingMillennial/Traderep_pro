@@ -722,6 +722,22 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// Permanently deletes a photo submission from Firestore and removes it
+  /// from the local list immediately (optimistic update).
+  Future<void> deletePhotoSubmission(String submissionId) async {
+    // Optimistic removal so UI updates instantly
+    _photoSubmissions = _photoSubmissions
+        .where((s) => s.id != submissionId)
+        .toList();
+    notifyListeners();
+
+    try {
+      await _fs.deletePhotoSubmission(submissionId);
+    } catch (e) {
+      if (kDebugMode) debugPrint('deletePhotoSubmission error: $e');
+    }
+  }
+
   // ─── Google / GBP Status ─────────────────────────────────────────────────────
   bool _googleConnected = false;
   bool get googleConnected => _googleConnected;

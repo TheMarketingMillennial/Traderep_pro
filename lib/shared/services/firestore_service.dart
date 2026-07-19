@@ -681,6 +681,14 @@ class FirestoreService {
     });
   }
 
+  /// Permanently deletes a photo submission document from Firestore.
+  /// Note: Firebase Storage files are NOT deleted here (they remain as a
+  /// safety net). A future admin tool or Cloud Function can purge orphaned
+  /// storage objects if needed.
+  Future<void> deletePhotoSubmission(String submissionId) async {
+    await _db.collection('photo_submissions').doc(submissionId).delete();
+  }
+
   // ══════════════════════════════════════════════════════════════════════════
   // MAPPERS — Firestore doc → Model
   // ══════════════════════════════════════════════════════════════════════════

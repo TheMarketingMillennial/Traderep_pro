@@ -287,13 +287,17 @@ class _PhotoLibraryScreenState extends State<PhotoLibraryScreen> {
           TextButton(
             onPressed: () {
               Navigator.pop(ctx);
+              // Optimistic UI feedback — AppState removes it from the list
+              // and Firestore deletes the document immediately.
+              context.read<AppState>().deletePhotoSubmission(session.id);
               ScaffoldMessenger.of(ctx).showSnackBar(
                 const SnackBar(
                   content: Text('Session deleted.'),
                   backgroundColor: TRColors.error,
+                  behavior: SnackBarBehavior.floating,
+                  duration: Duration(seconds: 3),
                 ),
               );
-              // TODO: call state.deletePhotoSubmission(session.id)
             },
             child: const Text('Delete', style: TextStyle(color: TRColors.error, fontWeight: FontWeight.w700)),
           ),
@@ -405,20 +409,11 @@ class _SessionCard extends StatelessWidget {
           // ── Action row ────────────────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-            child: Row(children: [
-              Expanded(child: _ActionBtn(
-                icon: Icons.download_rounded,
-                label: 'Download All',
-                onTap: () => _downloadAll(context, session),
-              )),
-              const SizedBox(width: 8),
-              Expanded(child: _ActionBtn(
-                icon: Icons.folder_zip_rounded,
-                label: 'Download ZIP',
-                color: TRColors.info,
-                onTap: () => _downloadZip(context, session),
-              )),
-            ]),
+            child: _ActionBtn(
+              icon: Icons.download_rounded,
+              label: 'Download All',
+              onTap: () => _downloadAll(context, session),
+            ),
           ),
         ],
       ),
@@ -465,13 +460,6 @@ class _SessionCard extends StatelessWidget {
     return '.jpg';
   }
 
-  void _downloadZip(BuildContext ctx, PhotoSubmission session) {
-    ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-      content: Text('Preparing ZIP for ${session.submittedByName}\'s ${session.photos.length} photos…'),
-      backgroundColor: TRColors.info,
-    ));
-    // TODO: call Railway /zip-photos endpoint with list of URLs
-  }
 
   String _formatDateTime(DateTime d) {
     const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -501,14 +489,6 @@ class _SessionMenu extends StatelessWidget {
             Icon(Icons.download_rounded, color: TRColors.grayLight, size: 16),
             SizedBox(width: 10),
             Text('Download All', style: TextStyle(color: TRColors.white, fontSize: 13)),
-          ]),
-        ),
-        const PopupMenuItem(
-          value: 'zip',
-          child: Row(children: [
-            Icon(Icons.folder_zip_rounded, color: TRColors.info, size: 16),
-            SizedBox(width: 10),
-            Text('Download ZIP', style: TextStyle(color: TRColors.white, fontSize: 13)),
           ]),
         ),
         const PopupMenuDivider(),
@@ -545,11 +525,6 @@ class _SessionMenu extends StatelessWidget {
                 });
               }
             }
-          case 'zip':
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text('Preparing ZIP for ${session.photos.length} photos…'),
-              backgroundColor: TRColors.info,
-            ));
           case 'delete':
             onDelete();
         }
@@ -803,30 +778,29 @@ class _ActionBtn extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
-  final Color color;
 
   const _ActionBtn({
     required this.icon,
     required this.label,
     required this.onTap,
-    this.color = TRColors.gold,
   });
 
   @override
   Widget build(BuildContext context) {
+    const c = TRColors.gold;
     return GestureDetector(
       onTap: onTap,
       child: Container(
         height: 36,
         decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.12),
+          color: c.withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: color.withValues(alpha: 0.35)),
+          border: Border.all(color: c.withValues(alpha: 0.35)),
         ),
         child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-          Icon(icon, color: color, size: 14),
+          Icon(icon, color: c, size: 14),
           const SizedBox(width: 6),
-          Text(label, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w700)),
+          Text(label, style: const TextStyle(color: c, fontSize: 12, fontWeight: FontWeight.w700)),
         ]),
       ),
     );
