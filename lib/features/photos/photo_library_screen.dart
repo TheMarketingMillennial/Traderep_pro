@@ -5,42 +5,48 @@
 
 import 'dart:async';
 import 'dart:js_interop';
-import 'package:web/web.dart' as web;
-import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:gal/gal.dart';
 import 'package:provider/provider.dart';
+import 'package:web/web.dart' as web;
 import '../../core/theme/app_theme.dart';
 import '../../shared/services/app_state.dart';
 import '../../shared/models/models.dart';
 
 // ─── Download Helper ──────────────────────────────────────────────────────────
-// Fetches image bytes and triggers a browser-native "Save" prompt so the file
-// lands in the device's Downloads / Camera Roll — no new tab required.
+// Fetches raw image bytes then routes to the correct save mechanism:
+//   • Web  → Blob URL + synthetic <a download> click (saves to Downloads)
+//   • Mobile → Gal.putImageBytes() (saves to Camera Roll / Gallery)
 Future<void> _downloadImageToDevice(String url, String filename) async {
   try {
-    // Fetch raw bytes (Firebase Storage URLs embed auth token in query string)
+    // Fetch raw bytes — Firebase Storage URLs embed auth token in query string
     final response = await http.get(Uri.parse(url));
     if (response.statusCode != 200) return;
+    final bytes = response.bodyBytes;
 
-    // Wrap bytes in a Blob and create a temporary object URL
-    final blob    = web.Blob(
-      [response.bodyBytes.toJS].toJS,
-      web.BlobPropertyBag(type: 'image/jpeg'),
-    );
-    final blobUrl = web.URL.createObjectURL(blob);
-
-    // Create a hidden <a download="filename"> and click it — triggers native Save
-    final anchor  = web.document.createElement('a') as web.HTMLAnchorElement
-      ..href = blobUrl
-      ..download = filename
-      ..style.display = 'none';
-    web.document.body!.appendChild(anchor);
-    anchor.click();
-
-    // Clean up immediately
-    anchor.remove();
-    web.URL.revokeObjectURL(blobUrl);
+    if (kIsWeb) {
+      // ── Web: Blob URL + hidden anchor trick ─────────────────────────────
+      // ignore: undefined_prefixed_name
+      final blob = web.Blob(
+        [bytes.toJS].toJS,
+        web.BlobPropertyBag(type: 'image/jpeg'),
+      );
+      final blobUrl = web.URL.createObjectURL(blob);
+      final anchor  = web.document.createElement('a') as web.HTMLAnchorElement
+        ..href = blobUrl
+        ..download = filename
+        ..style.display = 'none';
+      web.document.body!.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      web.URL.revokeObjectURL(blobUrl);
+    } else {
+      // ── Mobile (iOS / Android): save directly to Camera Roll / Gallery ──
+      // Gal.putImageBytes() handles the permission request automatically.
+      await Gal.putImageBytes(bytes, name: filename);
+    }
   } catch (e) {
     if (kDebugMode) debugPrint('[PhotoDownload] Failed to download $filename: $e');
   }

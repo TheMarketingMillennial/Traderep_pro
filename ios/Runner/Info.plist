@@ -41,6 +41,10 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>TradeRep Pro needs access to your photo library to save job site photos to your device.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>TradeRep Pro needs access to your photo library to save job site photos to your device.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
